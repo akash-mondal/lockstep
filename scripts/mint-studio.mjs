@@ -47,7 +47,7 @@ const state = JSON.parse(readFileSync(STATE_PATH, "utf8"));
 
 const DECIMALS = 6;
 const UNIT = 10 ** DECIMALS;
-// 1 STUD is nominally 1 HBAR so the foundry can quote the same number in either
+// 1 PRISM is nominally 1 HBAR so the foundry can quote the same number in either
 // asset and the studio's books stay in one unit.
 const SHARES = [
   { role: "upstream", numerator: 35, denominator: 100 },

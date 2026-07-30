@@ -101,5 +101,5 @@ export const hbar = (tinybar) => Number(BigInt(tinybar)) / 1e8;
  * the only symptom is a payment nobody can afford.
  */
 export const TINYBAR_PER_PRISM_UNIT = 100n;
-export const toStudUnits = (tinybar) => String(BigInt(tinybar) / TINYBAR_PER_PRISM_UNIT);
-export const stud = (units) => Number(BigInt(units)) / 1e6;
+export const toPrismUnits = (tinybar) => String(BigInt(tinybar) / TINYBAR_PER_PRISM_UNIT);
+export const prism = (units) => Number(BigInt(units)) / 1e6;

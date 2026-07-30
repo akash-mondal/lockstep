@@ -8,14 +8,14 @@
  * standard rather than working around it.
  *
  *   POST /v1/quote       0.05 ℏ in HBAR    plan the video, return a firm price
- *   POST /v1/render      quoted, in STUD   buy it; refracts to the value chain
+ *   POST /v1/render      quoted, in PRISM   buy it; refracts to the value chain
  *   GET  /v1/job/:id     free              how it is going
  *   GET  /v1/receipt/:id free              the bill, every line on HashScan
  *   GET  /v1/download/:id?token=  free     the video
  *
  * The two assets are deliberate. A quote is a straight metered sale with nobody
  * to divide it among, so it settles in HBAR. A finished video is the output of a
- * value chain, so it settles in STUD, whose fee schedule pays that chain at
+ * value chain, so it settles in PRISM, whose fee schedule pays that chain at
  * consensus.
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -26,13 +26,13 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import * as sessions from "./sessions.mjs";
-import { priceJob, budgetFor, hbar, stud } from "./pricing.mjs";
+import { priceJob, budgetFor, hbar, prism } from "./pricing.mjs";
 import { draftPlan } from "./plan.mjs";
 import { runJob } from "./worker.mjs";
 import { buildReceipt } from "./receipt.mjs";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
-const STUD = state.studio.tokenId;
+const PRISM = state.studio.tokenId;
 const PAY_TO = state.studio.studio.id;
 const PORT = Number(process.env.STUDIO_PORT ?? 4071);
 const ORIGIN = process.env.STUDIO_ORIGIN ?? `http://localhost:${PORT}`;
@@ -74,8 +74,8 @@ const planIdFrom = (ctx) => {
 const renderPrice = (ctx) => {
   const id = planIdFrom(ctx);
   const s = id ? sessions.read(id) : null;
-  if (!s?.plan || s.state !== "quoted") return { asset: STUD, amount: UNSELLABLE };
-  return { asset: STUD, amount: s.plan.pricing.quoteUnits };
+  if (!s?.plan || s.state !== "quoted") return { asset: PRISM, amount: UNSELLABLE };
+  return { asset: PRISM, amount: s.plan.pricing.quoteUnits };
 };
 
 const routes = {
@@ -191,13 +191,13 @@ app.post("/v1/quote", async (c) => {
       narrationLines: (drafted.narration ?? []).length,
       quote: {
         units: pricing.quoteUnits,
-        stud: stud(pricing.quoteUnits),
-        asset: STUD,
+        prism: prism(pricing.quoteUnits),
+        asset: PRISM,
         // The buyer sees where its money goes before it spends any.
         splitsTo: {
-          studio: stud(pricing.breakdown.studio),
-          upstream: stud(pricing.breakdown.upstream),
-          referrer: stud(pricing.breakdown.referrer),
+          studio: prism(pricing.breakdown.studio),
+          upstream: prism(pricing.breakdown.upstream),
+          referrer: prism(pricing.breakdown.referrer),
         },
       },
       plan: summarise(drafted),
@@ -248,7 +248,7 @@ app.post("/v1/discuss", async (c) => {
       t.plan = { ...revised, pricing, budgetTinybar: budgetFor(pricing) };
       t.conversation = [...conversation, {
         from: "studio",
-        text: `Revised: ${revised.scenes.length} scenes, ${stud(pricing.quoteUnits)} STUD.`,
+        text: `Revised: ${revised.scenes.length} scenes, ${prism(pricing.quoteUnits)} PRISM.`,
       }];
       return t;
     });
@@ -256,7 +256,7 @@ app.post("/v1/discuss", async (c) => {
       planId: id,
       revised: true,
       plan: summarise(revised),
-      quote: { units: pricing.quoteUnits, stud: stud(pricing.quoteUnits), asset: STUD },
+      quote: { units: pricing.quoteUnits, prism: prism(pricing.quoteUnits), asset: PRISM },
       buy: `POST ${ORIGIN}/v1/render?plan=${id}`,
     });
   } catch (err) {
@@ -310,7 +310,7 @@ app.get("/v1/job/:id", (c) => {
 app.get("/v1/receipt/:id", async (c) => {
   const s = sessions.read(c.req.param("id"));
   if (!s) return c.json({ error: "no such job" }, 404);
-  return c.json(await buildReceipt(s, { origin: ORIGIN, token: STUD }));
+  return c.json(await buildReceipt(s, { origin: ORIGIN, token: PRISM }));
 });
 
 /**
@@ -335,7 +335,7 @@ app.get("/v1/download/:id", (c) => {
 });
 
 app.get("/health", (c) =>
-  c.json({ ok: true, asset: STUD, payTo: PAY_TO, facilitator: FACILITATOR_URL }));
+  c.json({ ok: true, asset: PRISM, payTo: PAY_TO, facilitator: FACILITATOR_URL }));
 
 const discovery = {
   version: 1, x402Version: 2,
@@ -348,7 +348,7 @@ app.get("/.well-known/x402.json", (c) => c.json(discovery));
 
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
   console.log(`Prism Studio on :${info.port}`);
-  console.log(`  sells    STUD ${STUD} -> payTo ${PAY_TO}`);
-  console.log(`  paid     POST /v1/quote 0.05 ℏ    POST /v1/render <quoted> STUD`);
+  console.log(`  sells    PRISM ${PRISM} -> payTo ${PAY_TO}`);
+  console.log(`  paid     POST /v1/quote 0.05 ℏ    POST /v1/render <quoted> PRISM`);
   console.log(`  free     GET /v1/job/:id  /v1/receipt/:id  /v1/download/:id  /health`);
 });
