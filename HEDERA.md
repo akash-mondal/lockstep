@@ -320,6 +320,26 @@ Both cost a failed run and neither appears in the HIPs or SDK docs:
   where `custom_fees.proto` describes a singular `effective_payer_account_id`.
   Reading the singular name yields `undefined` on an otherwise correct record.
 
+- **A fee collector cannot send to a non-exempt account.** Under `Inclusive`
+  assessment the *receiver* is the effective payer, so the fee must come out of
+  the receiver's credit and route to the collectors. When the sender is itself a
+  collector, that would have the network pay a collector a fee on a payment it
+  is making, and it refuses the whole transfer with `FAIL_INVALID` — a status
+  that says nothing about the cause. Measured on one token, same amount, same
+  moment:
+
+  | sender | receiver | result |
+  |---|---|---|
+  | non-collector | non-collector | `SUCCESS`, both fees assessed |
+  | collector | collector | `SUCCESS`, no fees, exemption applies |
+  | collector | non-collector | **`FAIL_INVALID`** |
+
+  The consequence is architectural rather than cosmetic: **a fee collector is
+  structurally a terminal payee.** A design that has a collector forward value
+  onward cannot work, whatever the exemption flags say. That is consistent with
+  what a revenue split is for, since every payee in one is terminal, but it has
+  to be known before the token is minted rather than discovered after.
+
 ### The original checklist
 
 

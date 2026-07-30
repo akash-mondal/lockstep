@@ -35,6 +35,11 @@ try {
   const tx = await new AccountCreateTransaction()
     .setECDSAKeyWithAlias(key)
     .setInitialBalance(Hbar.from(fund, HbarUnit.Hbar))
+    // Unlimited auto-association. Without it the account has zero slots and
+    // cannot receive an HTS token at all: the transfer fails at consensus with
+    // TOKEN_NOT_ASSOCIATED_TO_ACCOUNT, after verify has already passed. An
+    // agent's wallet has to be able to hold whatever it is paid in.
+    .setMaxAutomaticTokenAssociations(-1)
     .execute(client);
   const receipt = await tx.getReceipt(client);
   const id = receipt.accountId.toString();

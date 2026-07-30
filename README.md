@@ -572,6 +572,12 @@ endpoint is what catches it.
 **The split is per-token, not per-call.** Fractional fees live on the token, so every transfer of
 it carries the same shares. Per-referrer economics means one token per referrer.
 
+**A fee collector is a terminal payee.** It cannot forward to a non-exempt account: under
+`Inclusive` assessment the receiver bears the fee, so a collector sending onward would have to
+collect on its own payment, and the network rejects the transfer with `FAIL_INVALID`. Collectors
+receive; they do not route. Design the split as a list of people owed money, not as a set of
+accounts that pass value along.
+
 **Ceilings.** Ten custom fees per token, but the binding limit is **twenty balance adjustments per
 `CryptoTransfer`**. Count adjustments, not fees. Refract to a handful of payees, not a long tail.
 
