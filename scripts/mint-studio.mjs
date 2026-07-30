@@ -1,5 +1,5 @@
 /**
- * Mint STUD, the token Prism Studio sells finished videos in.
+ * Mint PRISM, the token Prism Studio sells finished videos in.
  *
  * The split is a property of the token, so these numbers are a one-shot
  * decision: changing them later needs two of the three payees to sign a
@@ -81,7 +81,7 @@ async function party(role) {
 }
 
 try {
-  step(1, "Creating the three parties paid by every STUD transfer");
+  step(1, "Creating the three parties paid by every PRISM transfer");
   const studio = await party("studio");
   const upstream = await party("upstream");
   const referrer = await party("referrer");
@@ -94,7 +94,7 @@ try {
   console.log("    changing the split needs 2 of {studio, upstream, referrer}");
   console.log("    the operator alone cannot rewrite who gets paid");
 
-  step(3, "Minting STUD with the split in its fee schedule");
+  step(3, "Minting PRISM with the split in its fee schedule");
   if (state.studio?.tokenId) {
     console.log(`    token ${state.studio.tokenId} already minted, skipping`);
   } else {
@@ -118,8 +118,11 @@ try {
     // Naming a collector is not enough: it has to consent, or the network
     // returns INVALID_SIGNATURE. Undocumented in the HIPs and the SDK docs.
     const receipt = await new TokenCreateTransaction()
-      .setTokenName("Prism Studio Credit")
-      .setTokenSymbol("STUD")
+      .setTokenName("Prism")
+      .setTokenSymbol("PRISM")
+      // An admin key, so the name is not a one-way door. The first mint had none
+      // and its symbol became permanent the moment it was created.
+      .setAdminKey(operatorKey.publicKey)
       .setTokenType(TokenType.FungibleCommon)
       .setSupplyType(TokenSupplyType.Infinite)
       .setDecimals(DECIMALS)

@@ -31,7 +31,7 @@ export const UPSTREAM_SHARE = 0.35;
 export const MULTIPLIER = 3.7;
 
 /** Nobody sells a video for less than this, however small the plan. */
-export const FLOOR = 300_000_000n; // 3 STUD
+export const FLOOR = 300_000_000n; // 3 PRISM
 
 /**
  * Price a plan.
@@ -65,7 +65,7 @@ export function priceJob(plan) {
   const quote = quoted > FLOOR ? quoted : FLOOR;
 
   const upstream = (quote * 35n) / 100n;
-  const quoteUnits = quote / 100n; // STUD has 6 decimals; cost is in tinybar
+  const quoteUnits = quote / 100n; // PRISM has 6 decimals; cost is in tinybar
   return {
     items: items.map((i) => ({ ...i, each: String(i.each), subtotal: String(i.each * BigInt(i.count)) })),
     costTinybar: String(cost),
@@ -96,10 +96,10 @@ export const hbar = (tinybar) => Number(BigInt(tinybar)) / 1e8;
 
 /**
  * Costs are reckoned in tinybar because that is what the foundry charges in.
- * STUD carries six decimals, not eight, so a quote crossing from one to the
+ * PRISM carries six decimals, not eight, so a quote crossing from one to the
  * other is divided by 100. Skipping that step prices a 6.66 video at 666 and
  * the only symptom is a payment nobody can afford.
  */
-export const TINYBAR_PER_STUD_UNIT = 100n;
-export const toStudUnits = (tinybar) => String(BigInt(tinybar) / TINYBAR_PER_STUD_UNIT);
+export const TINYBAR_PER_PRISM_UNIT = 100n;
+export const toStudUnits = (tinybar) => String(BigInt(tinybar) / TINYBAR_PER_PRISM_UNIT);
 export const stud = (units) => Number(BigInt(units)) / 1e6;

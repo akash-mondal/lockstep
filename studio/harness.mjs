@@ -26,6 +26,7 @@ export async function agentTurn({
   prompt,
   allowedTools = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
   maxTurns = 40,
+  timeoutMs = 900_000,
   onText = null,
   onTool = null,
 }) {
@@ -34,10 +35,17 @@ export async function agentTurn({
   const tools = [];
   let result = null;
 
+  // A turn that stops making progress must fail rather than hang: a stuck agent
+  // holds a paid job open indefinitely, and the buyer has already been charged.
+  const deadline = Date.now() + timeoutMs;
   for await (const msg of query({
     prompt,
     options: { cwd, permissionMode: "bypassPermissions", allowedTools, maxTurns },
   })) {
+    if (Date.now() > deadline) {
+      return { text: said.join(""), tools, ok: false, subtype: "timeout",
+               costUsd: null, ms: timeoutMs };
+    }
     if (msg.type === "assistant") {
       for (const block of msg.message?.content ?? []) {
         if (block.type === "text") {
