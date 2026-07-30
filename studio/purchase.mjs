@@ -13,8 +13,9 @@
  *      from what we meant to buy.
  *
  * The change left over is the point, not an accident. The buyer paid a quote
- * derived from the job's cost with margin on top; whatever the job did not need
- * stays with the studio and is reported as such.
+ * derived from the job's own cost with margin on top; whatever the job did not
+ * need stays with the studio, and the receipt says so rather than leaving it to
+ * be worked out from two other numbers.
  */
 import { readFileSync } from "node:fs";
 import "dotenv/config";
@@ -138,10 +139,10 @@ export function settlement(session) {
     quoteTinybar: String(quote),
     budgetTinybar: String(budget),
     spentTinybar: String(spent),
+    // What the ceiling allowed and the job did not need. The agent stopping
+    // under budget is the design working, not an accident.
     unspentTinybar: String(budget - spent),
-    // The studio's own take is the 50% share of the sale, less what it spent
-    // making the thing.
-    studioShareTinybar: String((quote * 50n) / 100n),
-    makingChargeTinybar: String((quote * 50n) / 100n - spent),
+    // What the studio kept for planning, composing, rendering and reviewing.
+    makingChargeTinybar: String(quote - spent),
   };
 }

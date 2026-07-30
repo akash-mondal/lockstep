@@ -10,10 +10,7 @@
  * and the studio works out what that costs. A model that could set its own
  * budget is a model that can be argued into setting a bad one.
  */
-import { readFileSync } from "node:fs";
 import { agentJson } from "./harness.mjs";
-
-const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
 
 const SCHEMA = `{
   "title": "short title for the finished video",
@@ -119,11 +116,5 @@ export async function draftPlan({
     scenes,
     narration,
     music: json.music ?? "Sparse ambient bed, warm pads, no drums, instrumental.",
-    // Recorded on the plan so the receipt can label accounts without guessing.
-    parties: {
-      studio: state.studio.studio.id,
-      upstream: state.studio.upstream.id,
-      referrer: state.studio.referrer.id,
-    },
   };
 }

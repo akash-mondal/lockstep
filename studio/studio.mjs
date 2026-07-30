@@ -8,15 +8,15 @@
  * standard rather than working around it.
  *
  *   POST /v1/quote       0.05 ℏ in HBAR    plan the video, return a firm price
- *   POST /v1/render      quoted, in PRISM   buy it; refracts to the value chain
+ *   POST /v1/render      quoted, in HBAR   buy it, and the work begins
  *   GET  /v1/job/:id     free              how it is going
  *   GET  /v1/receipt/:id free              the bill, every line on HashScan
  *   GET  /v1/download/:id?token=  free     the video
  *
- * The two assets are deliberate. A quote is a straight metered sale with nobody
- * to divide it among, so it settles in HBAR. A finished video is the output of a
- * value chain, so it settles in PRISM, whose fee schedule pays that chain at
- * consensus.
+ * Everything settles in native HBAR. The studio's suppliers are paid by ordinary
+ * metered x402 calls as the work happens, one settlement per asset, so the bill
+ * decomposes into the purchases that produced the video rather than into a
+ * revenue share nobody can check.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import "dotenv/config";
@@ -26,14 +26,14 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import * as sessions from "./sessions.mjs";
-import { priceJob, budgetFor, hbar, prism } from "./pricing.mjs";
+import { priceJob, budgetFor, hbar } from "./pricing.mjs";
 import { draftPlan } from "./plan.mjs";
 import { runJob } from "./worker.mjs";
 import { buildReceipt } from "./receipt.mjs";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
-const PRISM = state.studio.tokenId;
 const PAY_TO = state.studio.studio.id;
+const HBAR = "0.0.0";
 const PORT = Number(process.env.STUDIO_PORT ?? 4071);
 const ORIGIN = process.env.STUDIO_ORIGIN ?? `http://localhost:${PORT}`;
 const FACILITATOR_URL = process.env.FACILITATOR_URL ?? "https://x402.org/facilitator";
@@ -74,8 +74,8 @@ const planIdFrom = (ctx) => {
 const renderPrice = (ctx) => {
   const id = planIdFrom(ctx);
   const s = id ? sessions.read(id) : null;
-  if (!s?.plan || s.state !== "quoted") return { asset: PRISM, amount: UNSELLABLE };
-  return { asset: PRISM, amount: s.plan.pricing.quoteUnits };
+  if (!s?.plan || s.state !== "quoted") return { asset: HBAR, amount: UNSELLABLE };
+  return { asset: HBAR, amount: s.plan.pricing.quoteTinybar };
 };
 
 const routes = {
@@ -107,10 +107,10 @@ const routes = {
       price: renderPrice,
       payTo: PAY_TO, maxTimeoutSeconds: 600,
     }],
-    description: "Buy a planned video. The payment refracts to the value chain at consensus.",
+    description: "Buy a planned video. Settles in native HBAR; the receipt shows every onward purchase.",
     mimeType: "application/json",
     serviceName: "Prism Studio",
-    tags: ["hedera", "x402", "video", "revenue-split", "agent-payments"],
+    tags: ["hedera", "x402", "video", "agent-payments"],
   },
 };
 
@@ -190,15 +190,12 @@ app.post("/v1/quote", async (c) => {
       scenes: drafted.scenes.length,
       narrationLines: (drafted.narration ?? []).length,
       quote: {
-        units: pricing.quoteUnits,
-        prism: prism(pricing.quoteUnits),
-        asset: PRISM,
-        // The buyer sees where its money goes before it spends any.
-        splitsTo: {
-          studio: prism(pricing.breakdown.studio),
-          upstream: prism(pricing.breakdown.upstream),
-          referrer: prism(pricing.breakdown.referrer),
-        },
+        tinybar: pricing.quoteTinybar,
+        hbar: hbar(pricing.quoteTinybar),
+        asset: HBAR,
+        // What the work costs us and what we keep, said before anything is paid.
+        assetCost: hbar(pricing.costTinybar),
+        makingCharge: hbar(pricing.marginTinybar),
       },
       plan: summarise(drafted),
       discuss: `POST ${ORIGIN}/v1/discuss?plan=${session.id}`,
@@ -248,7 +245,7 @@ app.post("/v1/discuss", async (c) => {
       t.plan = { ...revised, pricing, budgetTinybar: budgetFor(pricing) };
       t.conversation = [...conversation, {
         from: "studio",
-        text: `Revised: ${revised.scenes.length} scenes, ${prism(pricing.quoteUnits)} PRISM.`,
+        text: `Revised: ${revised.scenes.length} scenes, ${hbar(pricing.quoteTinybar)} HBAR.`,
       }];
       return t;
     });
@@ -256,7 +253,7 @@ app.post("/v1/discuss", async (c) => {
       planId: id,
       revised: true,
       plan: summarise(revised),
-      quote: { units: pricing.quoteUnits, prism: prism(pricing.quoteUnits), asset: PRISM },
+      quote: { tinybar: pricing.quoteTinybar, hbar: hbar(pricing.quoteTinybar), asset: HBAR },
       buy: `POST ${ORIGIN}/v1/render?plan=${id}`,
     });
   } catch (err) {
@@ -310,7 +307,7 @@ app.get("/v1/job/:id", (c) => {
 app.get("/v1/receipt/:id", async (c) => {
   const s = sessions.read(c.req.param("id"));
   if (!s) return c.json({ error: "no such job" }, 404);
-  return c.json(await buildReceipt(s, { origin: ORIGIN, token: PRISM }));
+  return c.json(await buildReceipt(s, { origin: ORIGIN, asset: HBAR }));
 });
 
 /**
@@ -335,12 +332,12 @@ app.get("/v1/download/:id", (c) => {
 });
 
 app.get("/health", (c) =>
-  c.json({ ok: true, asset: PRISM, payTo: PAY_TO, facilitator: FACILITATOR_URL }));
+  c.json({ ok: true, asset: HBAR, payTo: PAY_TO, facilitator: FACILITATOR_URL }));
 
 const discovery = {
   version: 1, x402Version: 2,
   name: "Prism Studio",
-  description: "Finished videos for agents. One payment, divided among the value chain at consensus.",
+  description: "Finished videos for agents, priced per job and paid in HBAR, with a receipt for every input.",
   resources: [`${ORIGIN}/v1/quote`, `${ORIGIN}/v1/render`],
 };
 app.get("/.well-known/x402", (c) => c.json(discovery));
@@ -348,7 +345,7 @@ app.get("/.well-known/x402.json", (c) => c.json(discovery));
 
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
   console.log(`Prism Studio on :${info.port}`);
-  console.log(`  sells    PRISM ${PRISM} -> payTo ${PAY_TO}`);
-  console.log(`  paid     POST /v1/quote 0.05 ℏ    POST /v1/render <quoted> PRISM`);
+  console.log(`  sells    native HBAR -> payTo ${PAY_TO}`);
+  console.log(`  paid     POST /v1/quote 0.05 ℏ   POST /v1/discuss 0.05 ℏ   POST /v1/render <quoted> ℏ`);
   console.log(`  free     GET /v1/job/:id  /v1/receipt/:id  /v1/download/:id  /health`);
 });

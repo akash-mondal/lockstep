@@ -1,19 +1,14 @@
 /**
  * The bill: what the buyer paid, and what that paid for.
  *
- * This is the part of Prism Studio that does not exist anywhere else. Plenty of
- * systems can show an agent paying for something. A receipt that decomposes into
- * the supply chain that produced the work, with every line checkable on a public
- * ledger by someone who does not trust us, is what the mechanism is actually
- * for.
+ * This is the part that does not exist elsewhere. Plenty of systems can show an
+ * agent paying for something. A receipt that decomposes into the purchases that
+ * produced the work, every line checkable on a public ledger by someone who does
+ * not trust us, is the point.
  *
- * It has two halves and they are different kinds of thing:
- *
- *   inbound   one payment, divided at consensus among the value chain. The
- *             division is read from `assessed_custom_fees` on the transaction
- *             record, not from our own accounting.
+ *   inbound   what the buyer paid, in HBAR, read back from the record
  *   outbound  every asset the agent bought to make the video, each its own x402
- *             settlement in HBAR, each naming what it bought.
+ *             settlement, each naming what it bought
  *
  * Nothing here is asserted. Every figure comes back from the mirror node, and
  * every line carries the link that lets a reader check it.
@@ -30,52 +25,37 @@ const fmt = (n) => tinybar(n).toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
  * *should* happen, the record says what did. If those ever disagree, the receipt
  * should show the disagreement rather than paper over it.
  */
-async function inboundFrom(txId, { labels }) {
+async function inboundFrom(txId) {
   if (!txId) return null;
   const mirrorId = toMirrorTxId(txId);
   const record = await transaction(mirrorId, { attempts: 8, delayMs: 1200 });
   if (!record) {
     return { transactionId: mirrorId, hashscan: hashscanTx(mirrorId), indexed: false };
   }
-  const transfers = record.token_transfers ?? [];
-  const assessed = record.assessed_custom_fees ?? [];
-  const collectors = new Set(assessed.map((f) => f.collector_account_id));
+  // Only the movements this payment caused. The node and network fee entries in
+  // a Hedera record are real but are not what the buyer paid the studio, and
+  // showing them as such would overstate the bill.
+  const transfers = record.transfers ?? [];
   const debits = transfers.filter((t) => BigInt(t.amount) < 0n);
-  const gross = -debits.reduce((s, t) => s + BigInt(t.amount), 0n);
-
-  const shares = [
-    ...transfers
-      .filter((t) => BigInt(t.amount) > 0n && !collectors.has(t.account))
-      .map((t) => ({
-        role: labels[t.account] ?? "studio",
-        account: t.account,
-        amount: String(t.amount),
-        hbar: fmt(t.amount),
-        via: "payTo",
-      })),
-    ...assessed.map((f) => ({
-      role: labels[f.collector_account_id] ?? "collector",
-      account: f.collector_account_id,
-      amount: String(f.amount),
-      hbar: fmt(f.amount),
-      via: "assessed_custom_fee",
-    })),
-  ];
+  const paidBy = debits.sort((a, b) => Number(BigInt(a.amount) - BigInt(b.amount)))[0];
+  const gross = paidBy ? -BigInt(paidBy.amount) : 0n;
+  const credited = transfers
+    .filter((t) => BigInt(t.amount) > 0n && BigInt(t.amount) === gross)
+    .map((t) => t.account);
 
   return {
     transactionId: mirrorId,
     hashscan: hashscanTx(mirrorId),
     indexed: true,
     consensusTimestamp: record.consensus_timestamp,
-    paidBy: debits[0]?.account ?? null,
+    asset: "0.0.0",
+    paidBy: paidBy?.account ?? null,
+    paidTo: credited[0] ?? null,
     gross: String(gross),
     grossHbar: fmt(gross),
-    dividedInto: shares,
-    // The claim worth checking: the buyer signed one transfer to one account.
-    note:
-      "The buyer signed a transfer crediting one account the full amount and naming " +
-      "no collector. The division below was performed by consensus nodes inside the " +
-      "same transaction.",
+    // The buyer paid no network fee. That is the fee-payer model, not a rounding
+    // detail, and it is why an agent can hold nothing but what it means to spend.
+    networkFeePaidBy: record.transfers?.length ? "the facilitator, as transaction fee payer" : null,
   };
 }
 
@@ -93,13 +73,8 @@ function outboundFrom(ledger) {
   }));
 }
 
-export async function buildReceipt(session, { origin, token }) {
-  const labels = {
-    [session.plan?.parties?.studio]: "studio",
-    [session.plan?.parties?.upstream]: "upstream",
-    [session.plan?.parties?.referrer]: "referrer",
-  };
-  const inbound = await inboundFrom(session.funding?.transactionId, { labels });
+export async function buildReceipt(session, { origin, asset = "0.0.0" }) {
+  const inbound = await inboundFrom(session.funding?.transactionId);
   const outbound = outboundFrom(session.ledger ?? []);
   const spent = outbound.reduce((s, o) => s + BigInt(o.amount), 0n);
 
@@ -107,7 +82,7 @@ export async function buildReceipt(session, { origin, token }) {
     jobId: session.id,
     title: session.plan?.title ?? null,
     state: session.state,
-    asset: token,
+    asset,
 
     inbound,
     outbound,
@@ -118,6 +93,12 @@ export async function buildReceipt(session, { origin, token }) {
       spentOnAssets: String(spent),
       spentOnAssetsHbar: fmt(spent),
       purchases: outbound.length,
+      // What the studio kept for planning, composing, rendering and reviewing.
+      // Reported rather than inferred, because a margin you have to work out
+      // from two other numbers is a margin somebody is hoping you will not.
+      makingCharge: inbound ? String(BigInt(inbound.gross) - spent) : null,
+      makingChargeHbar: inbound ? fmt(BigInt(inbound.gross) - spent) : null,
+      unspentBudgetHbar: session.settlement ? fmt(session.settlement.unspentTinybar) : null,
     },
 
     artifacts: (session.artifacts ?? []).map((a) => ({
@@ -146,14 +127,9 @@ export function renderMarkdown(receipt) {
   const L = [];
   L.push(`# ${receipt.title ?? "Video"}`, "");
   if (receipt.inbound?.indexed) {
-    L.push(`## You paid ${receipt.inbound.grossHbar}`, "");
+    L.push(`## You paid ${receipt.inbound.grossHbar} HBAR`, "");
     L.push(`[\`${receipt.inbound.transactionId}\`](${receipt.inbound.hashscan})`, "");
-    L.push(`One transfer. The network divided it:`, "");
-    L.push(`| party | share | account |`, `|---|---|---|`);
-    for (const s of receipt.inbound.dividedInto) {
-      L.push(`| ${s.role} | ${s.hbar} | \`${s.account}\` |`);
-    }
-    L.push("");
+    L.push(`You paid no network fee; the facilitator sponsored it.`, "");
   }
   if (receipt.outbound.length) {
     L.push(`## What it bought`, "");
@@ -161,7 +137,8 @@ export function renderMarkdown(receipt) {
     for (const o of receipt.outbound) {
       L.push(`| ${o.what} | ${o.hbar} | ${o.hashscan ? `[check](${o.hashscan})` : "—"} |`);
     }
-    L.push("", `${receipt.totals.purchases} purchases, ${receipt.totals.spentOnAssetsHbar} total.`, "");
+    L.push("", `${receipt.totals.purchases} purchases, ${receipt.totals.spentOnAssetsHbar} HBAR of inputs.`,
+      `Making charge kept by the studio: ${receipt.totals.makingChargeHbar} HBAR.`, "");
   }
   const video = receipt.artifacts.find((a) => a.url);
   if (video) L.push(`## The video`, "", `[${video.name}](${video.url}) · ${video.bytes} bytes`, "");

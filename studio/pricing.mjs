@@ -1,13 +1,15 @@
 /**
  * What a job costs us, and what it costs the buyer.
  *
- * The split is fixed on the token forever while the asset bill varies per job,
- * and those two facts only coexist if the quote is derived from the job's own
- * cost. With upstream share `s` and a quote of `cost x m`, the upstream share is
- * solvent exactly when `s*m >= 1`. At 35% and 3.7x that leaves 30% headroom on
- * every job size, which absorbs the music model's 2x duration variance and the
- * vision calls in the review loop. A flat price would be solvent on a short job
- * and underwater on a long one.
+ * Settlement is native HBAR, so there is no fee schedule to satisfy and the
+ * quote is simply the job's own measured cost plus a margin. That margin is the
+ * making charge: the studio's fee for planning, composing, rendering and
+ * reviewing, and it is reported afterwards rather than buried, because a quote
+ * with margin in it is only honest if the margin is visible.
+ *
+ * Pricing from the job's own cost rather than a flat rate matters as much here
+ * as it did before: a twelve-scene video buys twelve images, and a flat price
+ * would be generous on a short job and underwater on a long one.
  */
 
 /** Foundry list prices, in tinybar. The studio pays these, per call, in HBAR. */
@@ -18,17 +20,18 @@ export const SKU = {
   transcribe: 10_000_000n,
 };
 
-/** The share of a sale that reaches the upstream collector. */
-export const UPSTREAM_SHARE = 0.35;
+/** How much of a quote is margin rather than cost, at the default multiplier. */
+export const MARGIN_NOTE = "quote = measured cost x MULTIPLIER; the remainder is the making charge";
 
 /**
  * Multiplier from cost to quote.
  *
- * 2.86 is break-even for a 35% share. 3.7 is that plus a margin wide enough
- * that one surprise (a longer music clip, an extra review pass) does not put
- * the share underwater on a job already sold.
+ * Wide enough that one surprise, a longer music clip or an extra review pass,
+ * is absorbed rather than eating the whole margin on a job already sold. x402
+ * `exact` has no refund path, so a quote that turns out to be short cannot be
+ * corrected after the fact.
  */
-export const MULTIPLIER = 3.7;
+export const MULTIPLIER = 3.0;
 
 /** Nobody sells a video for less than this, however small the plan. */
 export const FLOOR = 300_000_000n; // 3 PRISM
@@ -64,23 +67,13 @@ export function priceJob(plan) {
   const quoted = (cost * BigInt(Math.round(MULTIPLIER * 10_000))) / 10_000n;
   const quote = quoted > FLOOR ? quoted : FLOOR;
 
-  const upstream = (quote * 35n) / 100n;
-  const quoteUnits = quote / 100n; // PRISM has 6 decimals; cost is in tinybar
   return {
     items: items.map((i) => ({ ...i, each: String(i.each), subtotal: String(i.each * BigInt(i.count)) })),
     costTinybar: String(cost),
     quoteTinybar: String(quote),
-    // What the buyer is actually charged, in the token's own units.
-    quoteUnits: String(quoteUnits),
-    // Stated so a buyer can see the margin rather than infer it.
-    breakdown: {
-      studio: String((quoteUnits * 50n) / 100n),
-      upstream: String((quoteUnits * 35n) / 100n),
-      referrer: String((quoteUnits * 15n) / 100n),
-    },
-    // The number that matters operationally: can the share cover the bill.
-    upstreamCoversCost: upstream >= cost,
-    headroomPct: cost === 0n ? null : Number(((upstream - cost) * 100n) / cost),
+    // Stated up front so a buyer sees the margin rather than inferring it.
+    marginTinybar: String(quote - cost),
+    marginPct: cost === 0n ? null : Number(((quote - cost) * 100n) / cost),
   };
 }
 
@@ -94,12 +87,3 @@ export function budgetFor(quotePlan) {
 
 export const hbar = (tinybar) => Number(BigInt(tinybar)) / 1e8;
 
-/**
- * Costs are reckoned in tinybar because that is what the foundry charges in.
- * PRISM carries six decimals, not eight, so a quote crossing from one to the
- * other is divided by 100. Skipping that step prices a 6.66 video at 666 and
- * the only symptom is a payment nobody can afford.
- */
-export const TINYBAR_PER_PRISM_UNIT = 100n;
-export const toPrismUnits = (tinybar) => String(BigInt(tinybar) / TINYBAR_PER_PRISM_UNIT);
-export const prism = (units) => Number(BigInt(units)) / 1e6;
