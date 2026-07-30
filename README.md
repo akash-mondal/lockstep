@@ -1,6 +1,10 @@
-# Prism
+<p align="center">
+  <img src="docs/logo.svg" alt="Prism — one payment, every payee" width="660">
+</p>
 
-**A payment that arrives already divided.**
+<p align="center">
+  <strong>A payment that arrives already divided.</strong>
+</p>
 
 An agent pays for something. It signs one transfer, of one amount, to one account — and it signs nothing about who else gets paid. By the time that transfer reaches consensus, the money is sitting in three accounts.
 
