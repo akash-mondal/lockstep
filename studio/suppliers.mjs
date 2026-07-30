@@ -190,9 +190,52 @@ export async function music({ prompt }) {
   };
 }
 
+/**
+ * Word-level timestamps for narration we already bought.
+ *
+ * HyperFrames wants a transcript to place captions and to pace reveals to the
+ * spoken word, and its local whisper path is not installed on this machine by
+ * choice. Scribe returns the timings directly and bills separately from the
+ * text-to-speech quota, so transcribing does not eat the budget for speaking.
+ *
+ * Returned in HyperFrames' own shape, `[{text, start, end}]`, so it can be
+ * written straight to transcript.json without a translation step.
+ */
+export async function transcribe({ bytes, filename = "narration.wav" }) {
+  const key = process.env.STT_API_KEY;
+  if (!key) throw new Error("STT_API_KEY is not set");
+
+  const form = new FormData();
+  form.append("file", new Blob([bytes]), filename);
+  form.append("model_id", process.env.STT_MODEL ?? "scribe_v1");
+  form.append("timestamps_granularity", "word");
+
+  const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    method: "POST",
+    headers: { "xi-api-key": key },
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`transcribe: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+  const j = await res.json();
+  // Scribe interleaves spacing entries with words; only words carry meaning here.
+  const words = (j.words ?? [])
+    .filter((w) => w.type === "word")
+    .map((w) => ({ text: w.text, start: w.start, end: w.end }));
+  return {
+    text: j.text ?? "",
+    language: j.language_code ?? null,
+    confidence: j.language_probability ?? null,
+    words,
+    model: process.env.STT_MODEL ?? "scribe_v1",
+  };
+}
+
 /** What a supplier call costs, for pricing a job before running it. */
 export const OBSERVED_COST = {
   image: 0.033, // per image, gemini-3.1-flash-lite-image, ~1120 image tokens
   music: 0.0396, // per clip, lyria-3-clip-preview, ~26s of MP3
   narration: 0, // not reported per call; small
+  transcribe: 0, // billed apart from the speech quota
 };

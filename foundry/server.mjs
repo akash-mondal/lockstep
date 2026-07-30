@@ -23,7 +23,7 @@ import { serve } from "@hono/node-server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
-import { image, narrate, music } from "../studio/suppliers.mjs";
+import { image, narrate, music, transcribe } from "../studio/suppliers.mjs";
 
 const PORT = Number(process.env.FOUNDRY_PORT ?? 4061);
 const PAY_TO = process.env.FOUNDRY_OPERATOR_ID;
@@ -47,6 +47,7 @@ const PRICE = {
   image: "25000000",   // 0.25 ℏ
   speech: "5000000",   //  0.05 ℏ
   music: "50000000",   //  0.50 ℏ, covering the 2x duration variance
+  transcribe: "10000000", // 0.10 ℏ
 };
 
 const facilitator = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
@@ -77,6 +78,9 @@ const routes = {
   "POST /v1/music": paid(PRICE.music,
     "Generate an instrumental music bed from a description. Returns MP3.",
     ["hedera", "x402", "music", "generative", "agent-payments"]),
+  "POST /v1/transcribe": paid(PRICE.transcribe,
+    "Transcribe audio to word-level timestamps, ready for caption timing.",
+    ["hedera", "x402", "transcription", "captions", "agent-payments"]),
 };
 
 const app = new Hono();
@@ -141,6 +145,35 @@ app.post("/v1/music", async (c) => {
   }
 });
 
+/**
+ * Word timings for audio the caller already has.
+ *
+ * Priced lowest of the four because it generates nothing: it reads an existing
+ * file. It exists as a paid route rather than a local step so that every input
+ * to a finished video has a settlement behind it, which is the whole point of
+ * the receipt.
+ */
+app.post("/v1/transcribe", async (c) => {
+  const b = await body(c);
+  if (!b?.data) return c.json({ error: "data is required, base64 audio" }, 400);
+  try {
+    const bytes = Buffer.from(b.data, "base64");
+    if (!bytes.length) return c.json({ error: "data decoded to zero bytes" }, 400);
+    const r = await transcribe({ bytes, filename: b.filename });
+    return c.json({
+      text: r.text,
+      language: r.language,
+      confidence: r.confidence,
+      // HyperFrames' own transcript shape, so it can be written straight out.
+      words: r.words,
+      wordCount: r.words.length,
+      model: r.model,
+    });
+  } catch (err) {
+    return c.json({ error: String(err.message ?? err) }, 502);
+  }
+});
+
 // ------------------------------------------------------------------ free
 app.get("/health", (c) => c.json({ ok: true, payTo: PAY_TO, facilitator: FACILITATOR_URL }));
 
@@ -154,6 +187,7 @@ app.get("/v1/catalogue", (c) =>
       { route: "POST /v1/image", tinybar: PRICE.image, hbar: 0.25, body: { prompt: "string", seed: "number?", aspect: "string?" } },
       { route: "POST /v1/speech", tinybar: PRICE.speech, hbar: 0.05, body: { text: "string", voice: "string?" } },
       { route: "POST /v1/music", tinybar: PRICE.music, hbar: 0.5, body: { prompt: "string" } },
+      { route: "POST /v1/transcribe", tinybar: PRICE.transcribe, hbar: 0.1, body: { data: "base64 audio", filename: "string?" } },
     ],
   }));
 
@@ -162,7 +196,8 @@ const discovery = {
   x402Version: 2,
   name: "Prism Foundry",
   description: "Generative assets for agents: images, narration and music, priced per call in HBAR.",
-  resources: [`${ORIGIN}/v1/image`, `${ORIGIN}/v1/speech`, `${ORIGIN}/v1/music`],
+  resources: [`${ORIGIN}/v1/image`, `${ORIGIN}/v1/speech`, `${ORIGIN}/v1/music`,
+              `${ORIGIN}/v1/transcribe`],
 };
 app.get("/.well-known/x402", (c) => c.json(discovery));
 app.get("/.well-known/x402.json", (c) => c.json(discovery));
@@ -171,6 +206,6 @@ serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
   console.log(`Prism Foundry on :${info.port}`);
   console.log(`  payTo       ${PAY_TO}   asset 0.0.0 (HBAR)`);
   console.log(`  facilitator ${FACILITATOR_URL}`);
-  console.log(`  paid        POST /v1/image  0.25 ℏ   POST /v1/speech 0.05 ℏ   POST /v1/music 0.50 ℏ`);
+  console.log(`  paid        /v1/image 0.25 ℏ  /v1/speech 0.05 ℏ  /v1/music 0.50 ℏ  /v1/transcribe 0.10 ℏ`);
   console.log(`  free        GET /v1/catalogue  /health  /.well-known/x402`);
 });
