@@ -1,0 +1,41 @@
+node_modules/
+dist/
+*.log
+
+# Secrets. None of these are recoverable and none belong in history.
+.env
+.env.*
+!.env.example
+
+# Account ids *and* private keys for every test participant, written by the
+# setup gates. The repo stays reproducible without it — run the gates again.
+.state.json
+
+# The co-signer's half of the agent's threshold key. Read by exactly one
+# module, in its own process, at mode 0600.
+.policy.key
+
+# Detached service logs and pids.
+.run/
+
+# Generated media. Assets cost real money per call, so they are cached locally
+# and never committed. A repository is not an asset store.
+assets/
+out/
+*.mp4
+*.mp3
+*.wav
+*.jpg
+*.jpeg
+*.png
+
+# Working notes and scratch output — anything written to think with rather than
+# for someone else to read.
+notes/
+scratch/
+tmp/
+*.local.md
+NOTES.md
+TODO.md
+PLAN.md
+RESULTS.md

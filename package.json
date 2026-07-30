@@ -1,0 +1,35 @@
+{
+  "name": "prism",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "One x402 payment that refracts into every payee, assessed at consensus.",
+  "scripts": {
+    "keygen": "node scripts/keygen.mjs",
+    "whoami": "node scripts/whoami.mjs",
+    "associate-usdc": "node scripts/associate-usdc.mjs",
+    "server": "node studio/server.mjs",
+    "gate1": "node scripts/gate1-custom-fees.mjs",
+    "gate2": "node scripts/gate2-threshold-x402.mjs",
+    "phase1": "node scripts/phase1-mint-prism.mjs",
+    "verify": "node scripts/verify-all.mjs",
+    "attack": "node scripts/attack-policy.mjs",
+    "demo": "node scripts/demo.mjs",
+    "policy": "node prism/policy-server.mjs",
+    "up": "bash scripts/up.sh",
+    "reconcile": "node scripts/reconcile.mjs",
+    "agent": "node studio/agent.mjs"
+  },
+  "dependencies": {
+    "@hashgraph/hedera-agent-kit": "^4.0.0",
+    "@hiero-ledger/sdk": "2.85.0",
+    "@hono/node-server": "^1.19.17",
+    "@x402/core": "^2.19.0",
+    "@x402/fetch": "^2.19.0",
+    "@x402/hedera": "^2.19.0",
+    "@x402/hono": "^2.19.0",
+    "dotenv": "^16.4.7",
+    "hono": "^4.12.32",
+    "zod": "^3.25.76"
+  }
+}
