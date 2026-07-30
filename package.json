@@ -1,9 +1,9 @@
 {
-  "name": "prism",
+  "name": "lockstep",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "One x402 payment that refracts into every payee, assessed at consensus.",
+  "description": "Spending limits for autonomous agents, enforced by the Hedera ledger.",
   "scripts": {
     "keygen": "node scripts/keygen.mjs",
     "whoami": "node scripts/whoami.mjs",
@@ -11,14 +11,16 @@
     "server": "node studio/server.mjs",
     "gate1": "node scripts/gate1-custom-fees.mjs",
     "gate2": "node scripts/gate2-threshold-x402.mjs",
-    "phase1": "node scripts/phase1-mint-prism.mjs",
+    "phase1": "node scripts/phase1-mint-token.mjs",
     "verify": "node scripts/verify-all.mjs",
     "attack": "node scripts/attack-policy.mjs",
     "demo": "node scripts/demo.mjs",
-    "policy": "node prism/policy-server.mjs",
+    "policy": "node lockstep/policy-server.mjs",
     "up": "bash scripts/up.sh",
     "reconcile": "node scripts/reconcile.mjs",
-    "agent": "node studio/agent.mjs"
+    "agent": "node studio/agent.mjs",
+    "studio": "node studio/studio.mjs",
+    "foundry": "node foundry/server.mjs"
   },
   "dependencies": {
     "@hashgraph/hedera-agent-kit": "^4.0.0",

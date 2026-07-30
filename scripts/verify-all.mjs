@@ -13,8 +13,8 @@ import "dotenv/config";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
 const MIRROR = process.env.MIRROR_NODE_URL;
-const ORIGIN = process.env.PRISM_ORIGIN ?? "http://localhost:4051";
-const TOKEN = state.prism.tokenId;
+const ORIGIN = process.env.LOCKSTEP_ORIGIN ?? "http://localhost:4051";
+const TOKEN = state.lockstep.tokenId;
 
 let passed = 0;
 let failed = 0;
@@ -25,7 +25,7 @@ const check = (name, ok, detail = "") => {
 };
 const get = async (url) => (await fetch(url)).json();
 
-console.log("\nPRISM — on-chain acceptance test\n" + "=".repeat(64));
+console.log("\nLOCKSTEP — on-chain acceptance test\n" + "=".repeat(64));
 
 // Fail loudly and usefully if a dependency is down. A suite that stack-traces
 // because a server is missing tells you nothing about the system under test.
@@ -75,8 +75,8 @@ check("route returns 402", res402.status === 402);
 const challenge = JSON.parse(
   Buffer.from(res402.headers.get("payment-required"), "base64").toString("utf8"),
 );
-const info = challenge.extensions?.prism?.info;
-check("prism extension present", Boolean(info));
+const info = challenge.extensions?.lockstep?.info;
+check("lockstep extension present", Boolean(info));
 check("declares three payees", info?.payees?.length === 3);
 check(
   "declared shares total 100%",

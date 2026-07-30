@@ -1,7 +1,7 @@
 /**
  * The metered service: what an agent is actually buying.
  *
- * Prism sells counterparty intelligence to agents that are about to pay someone.
+ * Lockstep sells counterparty intelligence to agents that are about to pay someone.
  * The two questions an autonomous payer cannot answer from a price quote alone:
  *
  *   "What will this HTS token actually cost me to send?"  — an x402 `exact` quote
@@ -15,9 +15,9 @@
  *
  * Both are answered from public mirror-node data, so the service is honest about
  * being a convenience layer rather than privileged information — and it is the
- * exact tool that would disclose Prism's own split to a stranger.
+ * exact tool that would disclose Lockstep's own split to a stranger.
  */
-import { accountInfo, tokenInfo } from "../prism/mirror.mjs";
+import { accountInfo, tokenInfo } from "../lockstep/mirror.mjs";
 
 /** What a transfer of this token really costs, beyond the quoted amount. */
 export async function tokenCost(tokenId, amountRaw) {

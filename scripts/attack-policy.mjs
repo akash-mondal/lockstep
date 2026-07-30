@@ -23,7 +23,7 @@ import {
   TransactionId,
   TransferTransaction,
 } from "@hiero-ledger/sdk";
-import { requestCosign } from "../prism/policy.mjs";
+import { requestCosign } from "../lockstep/policy.mjs";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
 const client = Client.forTestnet().setOperator(
@@ -31,9 +31,9 @@ const client = Client.forTestnet().setOperator(
   PrivateKey.fromStringECDSA(process.env.OPERATOR_KEY),
 );
 
-const TOKEN = state.prism.tokenId;
+const TOKEN = state.lockstep.tokenId;
 const AGENT = state.agent.id;
-const SERVICE = state.prism.service.id;
+const SERVICE = state.lockstep.service.id;
 const OUTSIDER = state.seller.id; // a real account that is not allowlisted
 const FEE_PAYER = "0.0.9185802";
 

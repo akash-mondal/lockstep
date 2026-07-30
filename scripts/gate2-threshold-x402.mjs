@@ -12,7 +12,7 @@
  *   b) The asset carries a fractional custom fee. Rule 5 of the exact scheme says
  *      "no additional positive net transfers to any other party besides payTo" —
  *      but that reads the *signed body*, and custom fees are merged in at
- *      consensus. If the facilitator accepts this, Prism is spec-compliant rather
+ *      consensus. If the facilitator accepts this, Lockstep is spec-compliant rather
  *      than merely clever.
  *
  * Runs against both public facilitators independently: shared reference code
@@ -161,7 +161,7 @@ try {
     const paymentPayload = {
       x402Version: 2,
       resource: {
-        url: "https://prism.local/gate2",
+        url: "https://lockstep.local/gate2",
         description: "Gate 2 probe",
         mimeType: "application/json",
       },

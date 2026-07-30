@@ -1,7 +1,7 @@
 /**
- * The `prism` x402 extension — disclosure for consensus-assessed revenue splits.
+ * The `lockstep` x402 extension — disclosure for consensus-assessed revenue splits.
  *
- * Prism's mechanism works precisely because the split is invisible to the signed
+ * Lockstep's mechanism works precisely because the split is invisible to the signed
  * transaction body: HTS custom fees are merged in at consensus, so a facilitator
  * decompiling the payload sees one clean payment to `payTo` and Rule 5 is satisfied
  * exactly as written. That is good for compliance and bad for trust — a buyer
@@ -35,9 +35,9 @@ async function cachedSplit(tokenId) {
  * @param {string} opts.tokenId  the fee-bearing asset whose schedule defines the split
  * @param {Record<string,string>} [opts.labels]  collector account id → human role
  */
-export function prismExtension({ tokenId, labels = {} }) {
+export function lockstepExtension({ tokenId, labels = {} }) {
   return {
-    key: "prism",
+    key: "lockstep",
 
     // The assessed amounts and tx id differ every call, so they must not be
     // subject to the client-echo equality check.

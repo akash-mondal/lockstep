@@ -2,7 +2,7 @@
  * GATE 1 — does an HTS fractional custom fee actually refract a transfer,
  * and does it show up in the mirror-node record as `assessed_custom_fees`?
  *
- * Prism's entire claim is that one payment pays several parties atomically, with
+ * Lockstep's entire claim is that one payment pays several parties atomically, with
  * the split assessed at consensus and reported in the record. Every part of that
  * is documented in HIP-18/573 and custom_fees.proto — but a survey of 800 recent
  * testnet transfers and 600 mainnet transfers found *zero* carrying assessed
@@ -113,7 +113,7 @@ try {
 
   const build = (withFees) => {
     const tx = new TokenCreateTransaction()
-      .setTokenName("Prism Gate 1")
+      .setTokenName("Lockstep Gate 1")
       .setTokenSymbol("PRZG1")
       .setTokenType(TokenType.FungibleCommon)
       .setSupplyType(TokenSupplyType.Infinite)

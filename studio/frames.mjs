@@ -24,7 +24,7 @@ export async function duration(path) {
 /** @returns {Promise<string[]>} base64 JPEGs, evenly spaced across the video */
 export async function sample(path, count = 6) {
   const secs = await duration(path);
-  const dir = mkdtempSync(join(tmpdir(), "prism-frames-"));
+  const dir = mkdtempSync(join(tmpdir(), "lockstep-frames-"));
   try {
     for (let i = 0; i < count; i++) {
       // Offset inside the span rather than at its edges: a frame taken exactly

@@ -1,5 +1,5 @@
 /**
- * Mint PRISM, the token Prism Studio sells finished videos in.
+ * Mint LOCKSTEP, the token Lockstep Studio sells finished videos in.
  *
  * The split is a property of the token, so these numbers are a one-shot
  * decision: changing them later needs two of the three payees to sign a
@@ -47,7 +47,7 @@ const state = JSON.parse(readFileSync(STATE_PATH, "utf8"));
 
 const DECIMALS = 6;
 const UNIT = 10 ** DECIMALS;
-// 1 PRISM is nominally 1 HBAR so the foundry can quote the same number in either
+// 1 LOCKSTEP is nominally 1 HBAR so the foundry can quote the same number in either
 // asset and the studio's books stay in one unit.
 const SHARES = [
   { role: "upstream", numerator: 35, denominator: 100 },
@@ -81,7 +81,7 @@ async function party(role) {
 }
 
 try {
-  step(1, "Creating the three parties paid by every PRISM transfer");
+  step(1, "Creating the three parties paid by every LOCKSTEP transfer");
   const studio = await party("studio");
   const upstream = await party("upstream");
   const referrer = await party("referrer");
@@ -94,7 +94,7 @@ try {
   console.log("    changing the split needs 2 of {studio, upstream, referrer}");
   console.log("    the operator alone cannot rewrite who gets paid");
 
-  step(3, "Minting PRISM with the split in its fee schedule");
+  step(3, "Minting LOCKSTEP with the split in its fee schedule");
   if (state.studio?.tokenId) {
     console.log(`    token ${state.studio.tokenId} already minted, skipping`);
   } else {
@@ -118,8 +118,8 @@ try {
     // Naming a collector is not enough: it has to consent, or the network
     // returns INVALID_SIGNATURE. Undocumented in the HIPs and the SDK docs.
     const receipt = await new TokenCreateTransaction()
-      .setTokenName("Prism")
-      .setTokenSymbol("PRISM")
+      .setTokenName("Lockstep")
+      .setTokenSymbol("LOCKSTEP")
       // An admin key, so the name is not a one-way door. The first mint had none
       // and its symbol became permanent the moment it was created.
       .setAdminKey(operatorKey.publicKey)
@@ -131,7 +131,7 @@ try {
       .setSupplyKey(operatorKey.publicKey)
       .setFeeScheduleKey(feeScheduleKey)
       .setCustomFees(fees)
-      .setTokenMemo("Prism Studio — a sale funds the next production, at consensus")
+      .setTokenMemo("Lockstep Studio — a sale funds the next production, at consensus")
       .freezeWith(client)
       .sign(upstream.key)
       .then((t) => t.sign(referrer.key))

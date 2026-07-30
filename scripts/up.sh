@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start both long-running services detached, so they survive the shell that
-# launched them. Prism needs two processes by design: the resource server and the
+# launched them. Lockstep needs two processes by design: the resource server and the
 # co-signer holding the agent's second key.
 #
 # Ports are freed by port, not by command pattern — anything else already
@@ -19,7 +19,7 @@ for p in "$POLICY_PORT" "$PORT"; do
 done
 sleep 1
 
-nohup node prism/policy-server.mjs > .run/policy.log 2>&1 &
+nohup node lockstep/policy-server.mjs > .run/policy.log 2>&1 &
 nohup node studio/server.mjs     > .run/server.log 2>&1 &
 sleep 4
 

@@ -1,7 +1,7 @@
 /**
  * The asset foundry: three generative models, sold over x402.
  *
- * This is the supply side of Prism Studio. The studio's agent buys an image, a
+ * This is the supply side of Lockstep Studio. The studio's agent buys an image, a
  * line of narration or a music bed here, one x402 settlement per call, and the
  * foundry is an ordinary vendor that happens to be bought from by software.
  *
@@ -65,7 +65,7 @@ const paid = (amount, description, tags) => ({
   }],
   description,
   mimeType: "application/json",
-  serviceName: "Prism Foundry",
+  serviceName: "Lockstep Foundry",
   tags,
 });
 
@@ -216,7 +216,7 @@ app.get("/v1/catalogue", (c) =>
 const discovery = {
   version: 1,
   x402Version: 2,
-  name: "Prism Foundry",
+  name: "Lockstep Foundry",
   description: "Generative assets for agents: images, narration and music, priced per call in HBAR.",
   resources: [`${ORIGIN}/v1/image`, `${ORIGIN}/v1/speech`, `${ORIGIN}/v1/music`,
               `${ORIGIN}/v1/transcribe`],
@@ -225,7 +225,7 @@ app.get("/.well-known/x402", (c) => c.json(discovery));
 app.get("/.well-known/x402.json", (c) => c.json(discovery));
 
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
-  console.log(`Prism Foundry on :${info.port}`);
+  console.log(`Lockstep Foundry on :${info.port}`);
   console.log(`  payTo       ${PAY_TO}   asset 0.0.0 (HBAR)`);
   console.log(`  facilitator ${FACILITATOR_URL}`);
   console.log(`  paid        /v1/image 0.25 ℏ  /v1/speech 0.05 ℏ  /v1/music 0.50 ℏ  /v1/transcribe 0.10 ℏ  /v1/vision 0.08 ℏ`);

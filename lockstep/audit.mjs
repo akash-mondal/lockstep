@@ -1,5 +1,5 @@
 /**
- * Keyless audit: recompute a Prism settlement from public data alone.
+ * Keyless audit: recompute a Lockstep settlement from public data alone.
  *
  * The point is that nobody has to take our word for it. This endpoint holds no
  * secret and reads nothing we control — it fetches the token's fee schedule and
@@ -14,8 +14,8 @@ import { readSplit, tokenInfo, transaction, hashscanTx } from "./mirror.mjs";
 /**
  * @param {string} mirrorTxId
  * @param {object} opts
- * @param {string} opts.tokenId   the asset a Prism payment must settle in
- * @param {string} [opts.payTo]   the service account a Prism payment must credit
+ * @param {string} opts.tokenId   the asset a Lockstep payment must settle in
+ * @param {string} [opts.payTo]   the service account a Lockstep payment must credit
  * @param {Record<string,string>} [opts.labels]
  */
 export async function auditSettlement(mirrorTxId, { tokenId, payTo, labels = {} } = {}) {
@@ -72,7 +72,7 @@ export async function auditSettlement(mirrorTxId, { tokenId, payTo, labels = {} 
 
   // Identity, not just arithmetic. Without these, this endpoint would happily
   // "verify" any transfer of any token that happens to balance — including one
-  // that never touched Prism, or that paid somebody else entirely. Arithmetic
+  // that never touched Lockstep, or that paid somebody else entirely. Arithmetic
   // conservation is necessary but nowhere near sufficient.
   const isExpectedAsset = !tokenId || asset === tokenId;
   const paidTheService = !payTo || nonCollectorCredits.every((t) => t.account === payTo);
@@ -91,7 +91,7 @@ export async function auditSettlement(mirrorTxId, { tokenId, payTo, labels = {} 
 
   return {
     ok: netZero && payToMatches && allSharesMatch && identityOk,
-    isPrismPayment: identityOk,
+    isLockstepPayment: identityOk,
     transactionId: mirrorTxId,
     hashscan: hashscanTx(mirrorTxId),
     consensusTimestamp: record.consensus_timestamp,

@@ -91,7 +91,7 @@ app.get("/health", (c) => c.json({ ok: true, role: "policy-cosigner" }));
 const HOST = process.env.POLICY_HOST ?? "127.0.0.1";
 
 serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
-  console.log(`Prism policy co-signer on http://${HOST}:${info.port}`);
+  console.log(`Lockstep policy co-signer on http://${HOST}:${info.port}`);
   console.log(`  holds the agent's second key; the agent process does not`);
   console.log(`  auth: bearer token required on /cosign`);
   if (HOST !== "127.0.0.1") {

@@ -1,5 +1,5 @@
 /**
- * Prism agent client — the buyer's side of the flow.
+ * Lockstep agent client — the buyer's side of the flow.
  *
  * Drives a real 402 → sign → retry → settle cycle against the resource server,
  * paying from a Hedera ThresholdKey account. The agent holds one key; the policy
@@ -50,7 +50,7 @@ async function requestCosign(payload) {
 }
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
-const ORIGIN = process.env.PRISM_ORIGIN ?? "http://localhost:4051";
+const ORIGIN = process.env.LOCKSTEP_ORIGIN ?? "http://localhost:4051";
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -60,8 +60,8 @@ const flag = (name, fallback) => {
 const route = flag("route", "cost");
 const target =
   route === "risk"
-    ? `${ORIGIN}/v1/account/${flag("id", state.prism.service.id)}/risk?asset=${state.prism.tokenId}`
-    : `${ORIGIN}/v1/token/${flag("id", state.prism.tokenId)}/cost?amount=${flag("amount", "1000000")}`;
+    ? `${ORIGIN}/v1/account/${flag("id", state.lockstep.service.id)}/risk?asset=${state.lockstep.tokenId}`
+    : `${ORIGIN}/v1/token/${flag("id", state.lockstep.tokenId)}/cost?amount=${flag("amount", "1000000")}`;
 
 const agentId = state.agent.id;
 const agentKey = PrivateKey.fromStringECDSA(state.agent.agentKey);
@@ -93,14 +93,14 @@ try {
   console.log(`402    ${accepted.amount} of ${accepted.asset} → ${accepted.payTo}`);
   console.log(`       feePayer ${accepted.extra.feePayer} (sponsors the network fee)`);
 
-  const disclosure = challenge.extensions?.prism?.info;
+  const disclosure = challenge.extensions?.lockstep?.info;
   if (disclosure) {
     console.log(`\n       the 402 discloses where the money goes:`);
     for (const p of disclosure.payees) {
       console.log(`         ${String(p.role).padEnd(14)} ${(p.basisPoints / 100).toFixed(2).padStart(6)}%  via ${p.via}`);
     }
   } else {
-    console.log(`\n       (no prism extension — this route settles to a single payee)`);
+    console.log(`\n       (no lockstep extension — this route settles to a single payee)`);
   }
 
   // ---- 2. Build the payment exactly as the exact scheme requires -----------
@@ -152,17 +152,17 @@ try {
   if (settle) {
     const s = decode(settle);
     console.log(`       tx ${s.transaction}  payer ${s.payer}`);
-    const prism = s.extensions?.prism;
-    if (prism) {
+    const lockstep = s.extensions?.lockstep;
+    if (lockstep) {
       console.log(`\n       what the network actually assessed:`);
-      for (const r of prism.refracted ?? []) {
+      for (const r of lockstep.refracted ?? []) {
         console.log(`         ${String(r.role).padEnd(14)} ${r.amount}`);
       }
-      if (!prism.refracted?.length && !prism.indexed) {
-        console.log(`         (mirror node has not indexed it yet — check ${prism.audit})`);
+      if (!lockstep.refracted?.length && !lockstep.indexed) {
+        console.log(`         (mirror node has not indexed it yet — check ${lockstep.audit})`);
       }
-      console.log(`\n       ${prism.hashscan}`);
-      console.log(`       audit (keyless): ${ORIGIN}${prism.audit}`);
+      console.log(`\n       ${lockstep.hashscan}`);
+      console.log(`       audit (keyless): ${ORIGIN}${lockstep.audit}`);
     }
   }
 

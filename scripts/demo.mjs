@@ -15,8 +15,8 @@ import "dotenv/config";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
 const MIRROR = process.env.MIRROR_NODE_URL;
-const ORIGIN = process.env.PRISM_ORIGIN ?? "http://localhost:4051";
-const TOKEN = state.prism.tokenId;
+const ORIGIN = process.env.LOCKSTEP_ORIGIN ?? "http://localhost:4051";
+const TOKEN = state.lockstep.tokenId;
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const PAUSE = Number(process.env.DEMO_PAUSE ?? 2200);
@@ -26,7 +26,7 @@ const get = async (u) => (await fetch(u)).json();
 const rule = (t) => console.log(`\n\x1b[1m${"─".repeat(74)}\n  ${t}\n${"─".repeat(74)}\x1b[0m`);
 const say = (t) => console.log(`  ${t}`);
 
-console.log("\n\x1b[1m  PRISM — one x402 payment, refracted at consensus\x1b[0m");
+console.log("\n\x1b[1m  LOCKSTEP — one x402 payment, refracted at consensus\x1b[0m");
 await wait(1200);
 
 // ---------------------------------------------------------------------------
@@ -65,8 +65,8 @@ const accepted = challenge.accepts[0];
 say(`HTTP ${res.status}   ${accepted.amount} of ${accepted.asset}  →  ${accepted.payTo}`);
 say(`             network fee sponsored by ${accepted.extra.feePayer}`);
 say("");
-say("the 402 carries a `prism` extension declaring the split:");
-for (const p of challenge.extensions.prism.info.payees) {
+say("the 402 carries a `lockstep` extension declaring the split:");
+for (const p of challenge.extensions.lockstep.info.payees) {
   say(`  ${String(p.role).padEnd(14)} ${(p.basisPoints / 100).toFixed(2).padStart(6)}%   via ${p.via}`);
 }
 say("");
@@ -88,7 +88,7 @@ const refused = await fetch(`${POLICY_URL}/cosign`, {
   },
   body: JSON.stringify({
     transactionBase64: Buffer.from("x").toString("base64"),
-    challenge: { asset: TOKEN, payTo: state.prism.service.id, amount: "999999" },
+    challenge: { asset: TOKEN, payTo: state.lockstep.service.id, amount: "999999" },
   }),
 }).then((r) => r.json());
 say("");

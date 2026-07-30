@@ -1,5 +1,5 @@
 /**
- * Sweep HBAR from a funding account into the Prism operator.
+ * Sweep HBAR from a funding account into the Lockstep operator.
  *
  * The funder key is read from the FUNDER_KEY env var and never written to disk —
  * pass it inline for a single run:

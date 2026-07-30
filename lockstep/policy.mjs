@@ -97,10 +97,10 @@ const policyKey = PrivateKey.fromStringECDSA(
 
 export const POLICY = {
   // Denominated in the smallest unit of each asset.
-  maxPerCall: { [state.prism.tokenId]: 50_000n, "0.0.0": 1_000_000n },
+  maxPerCall: { [state.lockstep.tokenId]: 50_000n, "0.0.0": 1_000_000n },
   // Only these accounts may be paid, whatever a 402 claims.
-  allowedPayees: new Set([state.prism.service.id]),
-  allowedAssets: new Set([state.prism.tokenId, "0.0.0"]),
+  allowedPayees: new Set([state.lockstep.service.id]),
+  allowedAssets: new Set([state.lockstep.tokenId, "0.0.0"]),
   maxCallsPerMinute: 30,
 };
 

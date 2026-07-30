@@ -43,7 +43,7 @@ function readChallenge(res) {
 }
 
 function summarizeSplit(challenge) {
-  const info = challenge.extensions?.prism?.info;
+  const info = challenge.extensions?.lockstep?.info;
   if (!info) return null;
   return {
     mechanism: info.mechanism,
@@ -164,8 +164,8 @@ unless the resource is priced in HBAR itself.
       amountPaid: prepared.amount,
       asset: accepted.asset,
       transaction: settle?.transaction,
-      refracted: settle?.extensions?.prism?.refracted ?? null,
-      hashscan: settle?.extensions?.prism?.hashscan ?? null,
+      refracted: settle?.extensions?.lockstep?.refracted ?? null,
+      hashscan: settle?.extensions?.lockstep?.hashscan ?? null,
       body: await paid.json().catch(() => null),
     };
   }

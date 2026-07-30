@@ -13,7 +13,7 @@
  * Nothing here is asserted. Every figure comes back from the mirror node, and
  * every line carries the link that lets a reader check it.
  */
-import { transaction, hashscanTx, toMirrorTxId } from "../prism/mirror.mjs";
+import { transaction, hashscanTx, toMirrorTxId } from "../lockstep/mirror.mjs";
 
 const tinybar = (n) => Number(BigInt(n ?? 0)) / 1e8;
 const fmt = (n) => tinybar(n).toFixed(8).replace(/0+$/, "").replace(/\.$/, "");

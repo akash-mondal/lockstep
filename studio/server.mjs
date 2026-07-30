@@ -1,5 +1,5 @@
 /**
- * Prism resource server.
+ * Lockstep resource server.
  *
  * A metered API for agents, priced per call, where every payment refracts into
  * three payees at consensus. Runs on stock `@x402/hono` + `@x402/hedera` against
@@ -19,14 +19,14 @@ import { serve } from "@hono/node-server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
-import { prismExtension } from "../prism/extension.mjs";
-import { auditSettlement } from "../prism/audit.mjs";
+import { lockstepExtension } from "../lockstep/extension.mjs";
+import { auditSettlement } from "../lockstep/audit.mjs";
 import { accountRisk, tokenCost } from "./intel.mjs";
-import { readSplit } from "../prism/mirror.mjs";
+import { readSplit } from "../lockstep/mirror.mjs";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
-const TOKEN = state.prism.tokenId;
-const PAY_TO = state.prism.service.id;
+const TOKEN = state.lockstep.tokenId;
+const PAY_TO = state.lockstep.service.id;
 const DECIMALS = 6;
 const PORT = Number(process.env.PORT ?? 4051);
 const ORIGIN = process.env.PUBLIC_ORIGIN ?? `http://localhost:${PORT}`;
@@ -37,8 +37,8 @@ const PRICE_UNITS = String(0.02 * 10 ** DECIMALS);
 const HBAR_PRICE_TINYBAR = "300000"; // ~$0.002 of HBAR for the control route
 
 const LABELS = {
-  [state.prism.upstream.id]: "upstream-data",
-  [state.prism.referrer.id]: "referrer",
+  [state.lockstep.upstream.id]: "upstream-data",
+  [state.lockstep.referrer.id]: "referrer",
 };
 
 /**
@@ -77,7 +77,7 @@ const bazaar = ({ queryParams = {}, example, properties, required }) => ({
 const facilitator = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
 const server = new x402ResourceServer(facilitator);
 server.register("hedera:*", new ExactHederaScheme());
-server.registerExtension(prismExtension({ tokenId: TOKEN, labels: LABELS }));
+server.registerExtension(lockstepExtension({ tokenId: TOKEN, labels: LABELS }));
 
 const routes = {
   "GET /v1/token/:id/cost": {
@@ -93,10 +93,10 @@ const routes = {
     ],
     description: "True cost of transferring an HTS token: custom fees, who bears them, what the recipient actually lands.",
     mimeType: "application/json",
-    serviceName: "Prism",
+    serviceName: "Lockstep",
     tags: ["hedera", "hts", "custom-fees", "agent-payments", "counterparty"],
     extensions: {
-      prism: {},
+      lockstep: {},
       bazaar: bazaar({
         queryParams: { amount: "20000" },
         properties: { amount: { type: "string", description: "Optional raw amount to quote fees against" } },
@@ -117,7 +117,7 @@ const routes = {
     ],
     description: "Counterparty check before paying a Hedera account: can it receive the asset, is it multi-key, is it safe.",
     mimeType: "application/json",
-    serviceName: "Prism",
+    serviceName: "Lockstep",
     tags: ["hedera", "risk", "agent-payments"],
     extensions: {
       bazaar: bazaar({
@@ -133,7 +133,7 @@ const app = new Hono();
 
 app.use("*", async (c, next) => {
   await next();
-  c.header("x-prism-asset", TOKEN);
+  c.header("x-lockstep-asset", TOKEN);
 });
 
 app.use(paymentMiddleware(routes, server));
@@ -194,7 +194,7 @@ app.get("/health", (c) => c.json({ ok: true, asset: TOKEN, facilitator: FACILITA
 const discovery = {
   version: 1,
   x402Version: 2,
-  name: "Prism",
+  name: "Lockstep",
   description: "Counterparty intelligence for paying agents. Every payment refracts to its supply chain at consensus.",
   resources: [`${ORIGIN}/v1/token/{id}/cost`, `${ORIGIN}/v1/account/{id}/risk`],
 };
@@ -204,7 +204,7 @@ app.get("/.well-known/x402.json", (c) => c.json(discovery));
 app.get("/openapi.json", (c) =>
   c.json({
     openapi: "3.1.0",
-    info: { title: "Prism", version: "1.0.0", description: discovery.description },
+    info: { title: "Lockstep", version: "1.0.0", description: discovery.description },
     servers: [{ url: ORIGIN }],
     paths: {
       "/v1/token/{id}/cost": {
@@ -241,7 +241,7 @@ app.get("/openapi.json", (c) =>
 );
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`Prism resource server on http://localhost:${info.port}`);
+  console.log(`Lockstep resource server on http://localhost:${info.port}`);
   console.log(`  asset       ${TOKEN} (PRSM)   payTo ${PAY_TO}`);
   console.log(`  facilitator ${FACILITATOR_URL}`);
   console.log(`  paid        GET /v1/token/:id/cost      $0.02 in PRSM  (split ON)`);

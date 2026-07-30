@@ -8,7 +8,7 @@
  * one-shot purchase run by a human does not need a co-signer to protect it from
  * itself.
  *
- *   node foundry/buy.mjs image  "a prism on a dark desk"
+ *   node foundry/buy.mjs image  "a lockstep on a dark desk"
  *   node foundry/buy.mjs speech "one payment, three payees"
  *   node foundry/buy.mjs music  "sparse ambient pads"
  */

@@ -1,13 +1,13 @@
-# Hedera capabilities used by Prism
+# Hedera capabilities used by Lockstep
 
-Prism's claim is that a single x402 payment can pay several parties atomically, without a contract, without a keeper, and without the buyer knowing. This file justifies that claim rail by rail: what each capability is, the exact API surface, the parameters that decide behaviour, the gotchas, and — for each one — an honest answer to *"could you just do this on an EVM chain?"*
+Lockstep's claim is that a single x402 payment can pay several parties atomically, without a contract, without a keeper, and without the buyer knowing. This file justifies that claim rail by rail: what each capability is, the exact API surface, the parameters that decide behaviour, the gotchas, and — for each one — an honest answer to *"could you just do this on an EVM chain?"*
 
 Everything below was verified on **2026-07-27** against the sources named at the end. Anything not verified is labelled.
 
 **Status:** the design questions this document opened are now closed by live testnet
 evidence rather than by reading. See §11 for what each check returned, and the
 README for the settled transactions. One caveat carried forward: this file argues
-that Prism's construction is what the `exact` scheme permits, and that claim is
+that Lockstep's construction is what the `exact` scheme permits, and that claim is
 narrower than it first appears — the facilitator checks provably pass, but a reader
 who applies Rule 5's amount-exactness to the *ledger outcome* rather than to the
 signed transfer list would disagree. The README states that tension in full under
@@ -17,7 +17,7 @@ signed transfer list would disagree. The README states that tension in full unde
 
 ## The inventory
 
-| Capability | HIP / spec | What it does | What it does **for Prism** |
+| Capability | HIP / spec | What it does | What it does **for Lockstep** |
 |---|---|---|---|
 | **HTS fractional custom fees** | HIP-18 (Final, v0.16.0) → HIP-573 (Final, v0.31.0) | Takes a fraction (≤ 1) of a fungible transfer and routes it to collector accounts inside the same `CryptoTransfer`, at consensus | **The entire mechanism.** This is what refracts one payment into many, atomically, with no code deployed |
 | **`fee_schedule_key` + `TokenFeeScheduleUpdate`** | HIP-18 / HIP-573 | A dedicated key authorising revision of a token's custom-fee list after creation | Lets the split table change as the supply chain changes, with no redeploy and no proxy |
@@ -37,13 +37,13 @@ signed transfer list would disagree. The README states that tension in full unde
 
 ### What it is
 
-An HTS fungible token carries a `custom_fees` list. Each entry is a `CustomFee` with a `fee_collector_account_id` and one of `FixedFee`, `FractionalFee`, or `RoyaltyFee`. Prism uses `FractionalFee`, which the protobuf describes as *"a fee based on a portion of the tokens transferred"* and which *"SHALL be assessed only for fungible/common tokens."*
+An HTS fungible token carries a `custom_fees` list. Each entry is a `CustomFee` with a `fee_collector_account_id` and one of `FixedFee`, `FractionalFee`, or `RoyaltyFee`. Lockstep uses `FractionalFee`, which the protobuf describes as *"a fee based on a portion of the tokens transferred"* and which *"SHALL be assessed only for fungible/common tokens."*
 
 When such a token moves, the network assesses each fractional fee and **merges the resulting transfers into the original transaction**. From `custom_fees.proto`, on `AssessedCustomFee`:
 
 > *"It is important to note that this is not the actual transfer. The transfer of value SHALL be merged into the original transaction to minimize the number of actual transfers. This descriptor presents the fee assessed separately in the record stream so that the details of the fee assessed are not hidden in this process."*
 
-Two consequences, and they are the two that Prism is built on:
+Two consequences, and they are the two that Lockstep is built on:
 
 1. **The fees are not in the signed transaction body.** The client never constructs them and cannot see them in what it signs. A facilitator decompiling the payload sees one clean transfer to `payTo`.
 2. **The fees are fully disclosed in the record.** Each one appears as an `AssessedCustomFee` with `amount`, `token_id`, `fee_collector_account_id`, and `effective_payer_account_id`.
@@ -76,16 +76,16 @@ And `AssessedCustomFee.effective_payer_account_id` confirms who is really paying
 
 > *"This SHALL be the account that would have had a higher balance absent the fee. In most cases this SHALL be the `sender`, but some fractional fees reduce the amount transferred, and in those cases the `receiver` SHALL be the effective payer for the fee."*
 
-For Prism this is the pricing decision, not an implementation detail. With `false` (the default), the quoted x402 `amount` is a **gross** price and the operator's take is what's left. With `true`, the quoted amount is the operator's **net** and the buyer is debited more than it was quoted. Both verify fine at the facilitator (§8); they are different products.
+For Lockstep this is the pricing decision, not an implementation detail. With `false` (the default), the quoted x402 `amount` is a **gross** price and the operator's take is what's left. With `true`, the quoted amount is the operator's **net** and the buyer is debited more than it was quoted. Both verify fine at the facilitator (§8); they are different products.
 
 **`minimum_amount` / `maximum_amount`** are absolute unit amounts, not fractions. A subtle trap from the protobuf: *"This value SHOULD be strictly greater than `minimum_amount`. If this amount is less than or equal to `minimum_amount`, then the fee charged SHALL always be equal to this value and `fractional_amount` SHALL NOT have any effect."* A misordered min/max silently converts your percentage into a flat fee.
 
-**`all_collectors_are_exempt`** (HIP-573). The treasury and a fee's own collector are *always* exempt. Setting this true additionally exempts every other collector on the token from this fee. Relevant because Prism's collectors will themselves hold and sometimes send the token.
+**`all_collectors_are_exempt`** (HIP-573). The treasury and a fee's own collector are *always* exempt. Setting this true additionally exempts every other collector on the token from this fee. Relevant because Lockstep's collectors will themselves hold and sometimes send the token.
 
 ### The gotchas
 
 - **Collectors must be associated before token creation.** `TOKEN_NOT_ASSOCIATED_TO_FEE_COLLECTOR` (235): *"Any of the token Ids in customFees are not associated to feeCollector."* Inconvenient, and also a gift — the network makes it impossible to ship a fake split pointing at accounts that never existed.
-- **Multi-recipient inclusive fees are approximate.** *"When a single transaction sends tokens from one sender to multiple recipients, and the `net_of_transfers` flag is false, the network SHALL attempt to evenly assess the total fee across all recipients proportionally. This may be inexact..."* Not a problem for Prism (one `payTo`, mandated by Rule 5), but it forecloses future designs.
+- **Multi-recipient inclusive fees are approximate.** *"When a single transaction sends tokens from one sender to multiple recipients, and the `net_of_transfers` flag is false, the network SHALL attempt to evenly assess the total fee across all recipients proportionally. This may be inexact..."* Not a problem for Lockstep (one `payTo`, mandated by Rule 5), but it forecloses future designs.
 - **Fees can starve a transfer.** *"If the sender lacks sufficient tokens to pay fees, or the assessment of custom fees reduces the net amount transferred to or below zero, the transaction MAY fail due to insufficient funds to pay all fees."* Failure code: `INSUFFICIENT_SENDER_ACCOUNT_BALANCE_FOR_CUSTOM_FEE` (259).
 - **Hard limits.** 10 custom fees per token (`CUSTOM_FEES_LIST_TOO_LONG`, 232). Two levels of fee-chain depth (`CUSTOM_FEE_CHARGING_EXCEEDED_MAX_RECURSION_DEPTH`, 257). And the real ceiling: `CUSTOM_FEE_CHARGING_EXCEEDED_MAX_ACCOUNT_AMOUNTS` (258) — *"More than 20 balance adjustments were to satisfy a CryptoTransfer and its implied custom fee payments."* Count adjustments, not fees.
 - **The split is a property of the token, not the call.** Every transfer of that token carries the same fees. Per-call variable splits require either separate tokens or a fee-schedule update between calls, which races in-flight payments.
@@ -110,7 +110,7 @@ There is a second, sharper difference specific to Hedera: the splitter-contract 
 
 **What it is.** A distinct key on the token, separate from admin/supply/wipe/freeze, that authorises exactly one thing: replacing the token's custom-fee list. Set at `TokenCreateTransaction` time. Revised with `TokenFeeScheduleUpdateTransaction`. If the token was created without one, it can never acquire one — which is precisely why testnet USDC is permanently ineligible.
 
-**What it does for Prism.** Supply chains change. A new upstream is added, a referral deal expires, a share is renegotiated. A `TokenFeeScheduleUpdate` signed by the fee schedule key rewrites the split for all future transfers. Nothing is redeployed and no address changes. Be precise about in-flight payments, though: a buyer's *signed body* is unaffected and stays valid, so nothing is invalidated in the sense of failing — but a payment that settles after the update is assessed under the new schedule, not the one disclosed in its 402. The signature survives; the split it experiences can differ from the one advertised. This is why the audit endpoint compares against the schedule in force at the transaction's consensus timestamp rather than today's.
+**What it does for Lockstep.** Supply chains change. A new upstream is added, a referral deal expires, a share is renegotiated. A `TokenFeeScheduleUpdate` signed by the fee schedule key rewrites the split for all future transfers. Nothing is redeployed and no address changes. Be precise about in-flight payments, though: a buyer's *signed body* is unaffected and stays valid, so nothing is invalidated in the sense of failing — but a payment that settles after the update is assessed under the new schedule, not the one disclosed in its 402. The signature survives; the split it experiences can differ from the one advertised. This is why the audit endpoint compares against the schedule in force at the transaction's consensus timestamp rather than today's.
 
 **Gotchas.** `INVALID_CUSTOM_FEE_SCHEDULE_KEY` (247) and `FEE_SCHEDULE_KEY_NOT_SET` (381) are the failure codes. Updates are not retroactive. And an update between a 402 challenge and its settlement changes the split that payment experiences — the buyer's signed body is unaffected, the assessed fees are not.
 
@@ -122,7 +122,7 @@ There is a second, sharper difference specific to Hedera: the splitter-contract 
 
 **What it is.** A Hedera account's key is not required to be a single public key. It can be a `KeyList` (all must sign) or a `ThresholdKey` (M of N must sign), nested, natively, with no contract and no deployment. The account behaves like any other account; the signature requirement is enforced by the network at transaction validation.
 
-**What it does for Prism.** The fee schedule key is the power to decide who gets paid what. Held by one operator, "the split is enforced on-chain" is only half true — the operator can rewrite it unilaterally tomorrow. Put the fee schedule key under a `ThresholdKey` whose members are the payees themselves, and changing the split requires the agreement of the parties it affects — the network will not accept a `TokenFeeScheduleUpdate` without the threshold met. That mechanism converts Prism from "a seller who promises to share" into "a group that jointly controls a revenue split".
+**What it does for Lockstep.** The fee schedule key is the power to decide who gets paid what. Held by one operator, "the split is enforced on-chain" is only half true — the operator can rewrite it unilaterally tomorrow. Put the fee schedule key under a `ThresholdKey` whose members are the payees themselves, and changing the split requires the agreement of the parties it affects — the network will not accept a `TokenFeeScheduleUpdate` without the threshold met. That mechanism converts Lockstep from "a seller who promises to share" into "a group that jointly controls a revenue split".
 
 One honest qualification, matching the README: in this demo all three payee keys were generated by one operator and live on one machine, so the multilateral property is structural rather than adversarially demonstrated. The enforcement is real; the independence of the parties is what a testnet build cannot show.
 
@@ -144,7 +144,7 @@ function keySignsTransaction(key, tx) {
 
 with `parseMirrorKey` reconstructing `ProtobufEncoded` keys via `Key._fromProtobufKey`. So a threshold-controlled account can be an x402 **payer** on Hedera today, out of the box. That is a rail the standard already supports and that nobody appears to be exercising.
 
-**Gotchas.** The reference implementation explicitly returns `signature_unverifiable` if `Key._fromProtobufKey` is missing, warning to *"check the `@hiero-ledger/sdk` / `@hiero-ledger/proto` version pins."* Threshold-key handling is version-sensitive. Also: a threshold-signed transaction needs all required signatures collected before it is sent, which for a *payer* means coordination inside `maxTimeoutSeconds`. Prism uses threshold keys in **two** places, and the coordination cost differs. The fee schedule key (2-of-3 across the payees) governs an occasional administrative action. The *payer* account is also a threshold key (2-of-2: agent plus policy co-signer), so every call does need two signatures collected inside `maxTimeoutSeconds` — comfortable against a co-signer service answering in milliseconds, but it is a live dependency, not a free property.
+**Gotchas.** The reference implementation explicitly returns `signature_unverifiable` if `Key._fromProtobufKey` is missing, warning to *"check the `@hiero-ledger/sdk` / `@hiero-ledger/proto` version pins."* Threshold-key handling is version-sensitive. Also: a threshold-signed transaction needs all required signatures collected before it is sent, which for a *payer* means coordination inside `maxTimeoutSeconds`. Lockstep uses threshold keys in **two** places, and the coordination cost differs. The fee schedule key (2-of-3 across the payees) governs an occasional administrative action. The *payer* account is also a threshold key (2-of-2: agent plus policy co-signer), so every call does need two signatures collected inside `maxTimeoutSeconds` — comfortable against a co-signer service answering in milliseconds, but it is a live dependency, not a free property.
 
 **Could you do this on an EVM chain?** **No — not for an account.** An EVM externally-owned account is one secp256k1 key, full stop. Multi-party control means a Gnosis Safe or an ERC-4337 smart account: a contract, with deployment cost, an audit surface, and an upgrade story. On Hedera it is a field on the account, validated by consensus nodes. This is a genuine categorical difference, and the prior-cycle audit's finding that **0 of 6 previous Hedera bounty winners ever constructed one** (inherited, not re-verified here) suggests it is also unclaimed.
 
@@ -154,7 +154,7 @@ with `parseMirrorKey` reconstructing `ProtobufEncoded` keys via `Key._fromProtob
 
 **What it is.** Hedera's own contribution to the x402 standard. `PaymentRequirements.extra.feePayer` names an account; the client sets `transactionId.accountId` to it and signs; the facilitator adds its signature as fee payer and submits. From the spec: *"this account must also sign the transaction as the fee payer."*
 
-**What it does for Prism.** The buyer's agent needs the payment asset and nothing else — no HBAR, no gas, no top-up loop. Neither do the fee collectors; they only ever receive. An agent can be provisioned with exactly one token balance and transact. That is the machine-to-machine story the bounty is asking for, made literal.
+**What it does for Lockstep.** The buyer's agent needs the payment asset and nothing else — no HBAR, no gas, no top-up loop. Neither do the fee collectors; they only ever receive. An agent can be provisioned with exactly one token balance and transact. That is the machine-to-machine story the bounty is asking for, made literal.
 
 **The API surface and the gotcha.** Read `extra.feePayer` from the 402 challenge, per challenge. Do not hardcode it. `ExactHederaScheme.getExtra()` is:
 
@@ -165,7 +165,7 @@ return { feePayer: addresses[randomIndex] };
 
 A facilitator managing several accounts hands out different fee payers on different challenges. And the two public facilitators differ anyway — `0.0.9185802` (x402.org) vs `0.0.7162784` (blocky402), both verified live. A hardcoded fee payer fails with `invalid_exact_hedera_payload_fee_payer_mismatch`.
 
-**Safety rules the facilitator enforces.** The fee payer must not appear as a negative entry in any HBAR transfer list, nor in the token transfer list for the asset. It *may* appear positive — the spec's own words, *"for example when collecting fees or custom fee distributions"*. That clause shows the authors had custom fees in mind somewhere in the flow. It is about the **fee payer**, not about `payTo`'s net credit, so it does not license Prism's construction and should not be read as doing so; see the README's "honest position on Rule 5".
+**Safety rules the facilitator enforces.** The fee payer must not appear as a negative entry in any HBAR transfer list, nor in the token transfer list for the asset. It *may* appear positive — the spec's own words, *"for example when collecting fees or custom fee distributions"*. That clause shows the authors had custom fees in mind somewhere in the flow. It is about the **fee payer**, not about `payTo`'s net credit, so it does not license Lockstep's construction and should not be read as doing so; see the README's "honest position on Rule 5".
 
 **Could you do this on an EVM chain?** Yes. ERC-4337 paymasters and EIP-7702 delegation both sponsor gas, and x402's EVM schemes use permit-style signatures for the same reason. **This rail is simpler and contract-free on Hedera, not unique to it.** On Hedera it is a protocol field; on EVM it is an account-abstraction stack. Real, but a difference of ergonomics.
 
@@ -175,7 +175,7 @@ A facilitator managing several accounts hands out different fee payers on differ
 
 **What it is.** Every custom fee assessed appears in the transaction record as an `AssessedCustomFee`: `amount`, `token_id` (absent for HBAR), `fee_collector_account_id`, and `repeated effective_payer_account_id`. Exposed over REST at `GET /api/v1/transactions/{transactionId}`.
 
-**What it does for Prism.** The transfer list in the record shows the merged, final movements. The `assessed_custom_fees` array shows, separately and unambiguously, that N units went to collector X because of a custom fee, paid effectively by Y. A judge can open HashScan, see one payment, and see the split — with the transaction record itself stating who bore the cost. No application-level accounting is asked to be believed.
+**What it does for Lockstep.** The transfer list in the record shows the merged, final movements. The `assessed_custom_fees` array shows, separately and unambiguously, that N units went to collector X because of a custom fee, paid effectively by Y. A judge can open HashScan, see one payment, and see the split — with the transaction record itself stating who bore the cost. No application-level accounting is asked to be believed.
 
 **Gotchas.** These appear only in the record, never in the signed body — which is what makes the whole design work and also what makes it invisible to any pre-consensus inspection. A settlement failure means no record and no fees; there is no partial state.
 
@@ -187,9 +187,9 @@ A facilitator managing several accounts hands out different fee payers on differ
 
 **What it is.** `https://testnet.mirrornode.hedera.com` — free, public, unauthenticated REST over all network state and history. `/api/v1/accounts/{id}`, `/api/v1/accounts/{id}/tokens`, `/api/v1/tokens/{id}`, `/api/v1/transactions/{id}`.
 
-**What it does for Prism.** Two jobs. First, anyone can recompute the split independently: fetch the token's `custom_fees`, fetch the transaction, verify the assessed amounts match. Second — and this is already happening whether you use it or not — the reference facilitator depends on it. `createHederaVerifyPayerSignature` resolves the payer's public key from `/api/v1/accounts/{payer}`. `createHederaPreflightTransfer` checks payer balance and whether `payTo` is associated (including walking `/tokens` pages to count consumed auto-association slots against `max_automatic_token_associations`).
+**What it does for Lockstep.** Two jobs. First, anyone can recompute the split independently: fetch the token's `custom_fees`, fetch the transaction, verify the assessed amounts match. Second — and this is already happening whether you use it or not — the reference facilitator depends on it. `createHederaVerifyPayerSignature` resolves the payer's public key from `/api/v1/accounts/{payer}`. `createHederaPreflightTransfer` checks payer balance and whether `payTo` is associated (including walking `/tokens` pages to count consumed auto-association slots against `max_automatic_token_associations`).
 
-**Gotchas.** Mirror nodes lag consensus slightly; a record may not be queryable the instant a receipt returns. The facilitator's dependency on it means a mirror node outage is a verification outage. Prism retries every mirror read with exponential backoff, but treats a 404 as an answer rather than a transient — retrying "does not exist" only wastes time. And preflight only inspects `payTo` — never the fee collectors — which is exactly the gap in §11.
+**Gotchas.** Mirror nodes lag consensus slightly; a record may not be queryable the instant a receipt returns. The facilitator's dependency on it means a mirror node outage is a verification outage. Lockstep retries every mirror read with exponential backoff, but treats a 404 as an answer rather than a transient — retrying "does not exist" only wastes time. And preflight only inspects `payTo` — never the fee collectors — which is exactly the gap in §11.
 
 **Could you do this on an EVM chain?** Yes, with an indexer — but usually a keyed, rate-limited, paid one (Etherscan, Alchemy, The Graph). **Operational convenience, not a unique capability.** Worth one honest sentence, not a paragraph.
 
@@ -199,11 +199,11 @@ A facilitator managing several accounts hands out different fee payers on differ
 
 **Fixed fees.** The bounty states it plainly: *"On Hedera they settle in seconds at a fixed fee of $0.001 per transfer. That fixed, predictable cost is what makes per-use payments viable."* HBAR transfers are $0.0001, HTS transfers $0.001.
 
-**What it does for Prism.** A many-way split is only meaningful if the split is large relative to the cost of moving it. If a transfer fee is auctioned and can spike, a per-call micropayment can cost more than it earns, and a 10% share of it becomes noise. Fixed pricing is what makes the *unit economics* of refraction hold at micropayment size. Note also that the split itself is free — the fees are assessed inside the same `CryptoTransfer`, so paying four parties costs the same network fee as paying one. On any splitter-contract design, each additional payee is more gas.
+**What it does for Lockstep.** A many-way split is only meaningful if the split is large relative to the cost of moving it. If a transfer fee is auctioned and can spike, a per-call micropayment can cost more than it earns, and a 10% share of it becomes noise. Fixed pricing is what makes the *unit economics* of refraction hold at micropayment size. Note also that the split itself is free — the fees are assessed inside the same `CryptoTransfer`, so paying four parties costs the same network fee as paying one. On any splitter-contract design, each additional payee is more gas.
 
 **Finality.** Hedera's aBFT consensus has no reorg window; a receipt is final. This is why the x402 middleware can afford to await settlement inside the request (§8) rather than returning optimistically and reconciling later.
 
-**Could you do this on an EVM chain?** **This is an economic property, not a capability, and it should not be dressed up as one.** L2s are cheap; some are very cheap. The honest claims are narrow: Hedera's fee is *fixed and denominated in USD* rather than auctioned, so it cannot spike under congestion; and the split costs nothing extra because it happens inside the transfer. On finality, the honest claim is that Hedera's is deterministic at consensus while EVM L1 is probabilistic and L2s carry their own settlement assumptions. Both are real. Neither is the reason Prism can exist.
+**Could you do this on an EVM chain?** **This is an economic property, not a capability, and it should not be dressed up as one.** L2s are cheap; some are very cheap. The honest claims are narrow: Hedera's fee is *fixed and denominated in USD* rather than auctioned, so it cannot spike under congestion; and the split costs nothing extra because it happens inside the transfer. On finality, the honest claim is that Hedera's is deterministic at consensus while EVM L1 is probabilistic and L2s carry their own settlement assumptions. Both are real. Neither is the reason Lockstep can exist.
 
 ---
 
@@ -226,11 +226,11 @@ A facilitator managing several accounts hands out different fee payers on differ
 
 Worth stating precisely, because it is easy to assume otherwise. In `@x402/express@2.19.0` and `@x402/hono@2.19.0`, settlement is **awaited before the buyer sees anything**. Hono nulls `c.res`, awaits `processSettlement`, and reassigns; Express overrides `res.end`, buffers the chunks, and awaits settlement before writing. Combined with `getReceipt` in the Hedera signer, the chain is: handler runs → response buffered → transaction submitted → Hedera receipt received → response flushed.
 
-For Prism this is good news twice over. The split is real by the time the buyer is served, and any custom-fee failure surfaces as a 402 rather than a silent loss.
+For Lockstep this is good news twice over. The split is real by the time the buyer is served, and any custom-fee failure surfaces as a 402 rather than a silent loss.
 
 ### Where the spec constrains the design
 
-| Rule | Constraint | Effect on Prism |
+| Rule | Constraint | Effect on Lockstep |
 |---|---|---|
 | 1 — Transaction layout | Must be a `TransferTransaction` **directly**, not wrapped in `ScheduleCreateTransaction` or anything else | Kills scheduled transactions, HIP-423, and any batching |
 | 1 — Transaction layout | *"Contain **only** transfer operations... necessary to implement the requested payment"* | Kills memo tricks, extra ops, piggybacked messages |
@@ -252,7 +252,7 @@ Implementation reality, from `ExactHederaScheme.validateTransferSemantics`, veri
 
 All verified live 2026-07-27. The scaffold facilitator is a thin wrapper — it imports `ExactHederaScheme` from `@x402/hedera/exact/facilitator` and `x402Facilitator` from `@x402/core/facilitator`, and exposes `GET /supported`, `POST /verify`, `POST /settle`, plus `GET /health`. Its own comment: *"It is non-custodial: it can only add its fee-payer signature to a transfer the buyer already authorized."* It defaults to `aliasPolicy: "reject"`, requiring `payTo` to be a concrete account id rather than an EVM alias — the spec permits either, and warns that allowing aliases lets a resource server make the facilitator fund account creation.
 
-Of the 11 payment kinds the canonical facilitator advertises, **Hedera has exactly one**: `exact`. No `upto`, no `batch-settlement`. Prism must work inside that one scheme, unmodified.
+Of the 11 payment kinds the canonical facilitator advertises, **Hedera has exactly one**: `exact`. No `upto`, no `batch-settlement`. Lockstep must work inside that one scheme, unmodified.
 
 ---
 
@@ -262,13 +262,13 @@ HIP-991 is **Final**, shipped in release **0.59.5**. It lets an HCS topic charge
 
 This is a genuine micropayment primitive **at the consensus layer**, with no EVM equivalent. No other chain lets you charge for a log write at the protocol level. Hedera publishes `hedera-dev/tutorial-js-hip-991-ai-agent` framing it explicitly as a way to empower AI agents. The economic constraint to be aware of: the `ConsensusSubmitMessage` base price rose from $0.0001 to $0.0008 USD in January 2026 with the v0.69 release, per the note in HIP-991 itself.
 
-**So why is it not Prism's mechanism?** Because HIP-991 topic fees are **fixed only**. Directly from `custom_fees.proto`, on `FixedCustomFee`:
+**So why is it not Lockstep's mechanism?** Because HIP-991 topic fees are **fixed only**. Directly from `custom_fees.proto`, on `FixedCustomFee`:
 
 > *"Only 'fixed' fee definitions are supported because there is no basis for a fractional fee on a consensus submit transaction."*
 
-A percentage refraction of a variable payment cannot be expressed as a fixed per-message fee. HIP-991 charges for *writing*; Prism divides a *payment*. They are different primitives that happen to share the phrase "custom fee".
+A percentage refraction of a variable payment cannot be expressed as a fixed per-message fee. HIP-991 charges for *writing*; Lockstep divides a *payment*. They are different primitives that happen to share the phrase "custom fee".
 
-It remains available as a complementary rail — a paid audit log where each Prism settlement is written to a revenue-generating topic, monetising the receipt trail itself and using HCS's consensus-computed `running_hash` for tamper-evidence without inventing a `prevHash` field. That is a real option, not the core. Adding it would be additive; claiming it as the split mechanism would be false.
+It remains available as a complementary rail — a paid audit log where each Lockstep settlement is written to a revenue-generating topic, monetising the receipt trail itself and using HCS's consensus-computed `running_hash` for tamper-evidence without inventing a `prevHash` field. That is a real option, not the core. Adding it would be additive; claiming it as the split mechanism would be false.
 
 ---
 
@@ -280,10 +280,10 @@ It remains available as a complementary rail — a paid audit log where each Pri
 | **Scheduled transactions / HIP-423** | Categorically forbidden: *"It MUST NOT be wrapped in a `ScheduleCreateTransaction` or any other transaction type."* Not a preference — a spec violation. |
 | **HIP-336 allowances / approvals** | The `exact` scheme wants a direct, client-signed transfer whose signature the facilitator verifies against the payer's own key. An approval introduces a spender whose authority the facilitator would have to reason about separately, for no gain. |
 | **HIP-991 topic fees as the split** | Fixed fees only; cannot express a percentage. See §9. Optional as a receipt log. |
-| **NFTs / royalty fees** | `RoyaltyFee` is NFT-only. Prism settles in a fungible token. Fractional fees are explicitly fungible-only. |
+| **NFTs / royalty fees** | `RoyaltyFee` is NFT-only. Lockstep settles in a fungible token. Fractional fees are explicitly fungible-only. |
 | **`upto` / `batch-settlement` schemes** | Not advertised for Hedera by either public facilitator. Only `exact` exists here. |
 | **HCS-10 / HCS-11 / HCS-25 / HCS-26** | Agent registry, agent card, x402 trust signal, and skills registry. Adjacent and interesting, and a different product. HCS-25's x402 adapter also has a known weakness — volume and trade counts are trivially wash-traded — so building a claim on it would be weak. *These four were not re-verified in this pass; treat their details as inherited from the prior research.* |
-| **Custom / self-hosted facilitator as the primary path** | Running your own facilitator lets you relax any check you want, which proves nothing about interoperability. Prism runs against unmodified public facilitators. Self-hosting is a fallback, and the scaffold-hbar server exists if it is needed. |
+| **Custom / self-hosted facilitator as the primary path** | Running your own facilitator lets you relax any check you want, which proves nothing about interoperability. Lockstep runs against unmodified public facilitators. Self-hosting is a fallback, and the scaffold-hbar server exists if it is needed. |
 | **`hiero-cli` x402 plugin** | Reported to exist on GitHub `main` but **not in the published npm tag**. Not verified in this pass; do not build on it. |
 
 ---
@@ -297,13 +297,13 @@ stays legible, with the observed answer recorded.
 | # | Question | Answer, observed |
 |---|---|---|
 | 1 | Does a fee-bearing transfer pass **both** public facilitators? | **Yes, both.** x402.org → `0.0.9185802-1785181090-410250982`, blocky402 → `0.0.7162784-1785181097-148987684`. Each returned `isValid: true` then `success: true`, and each settled with `assessed_custom_fees` populated. Tested separately; neither was inferred from the other. |
-| 2 | `net_of_transfers` — which side absorbs the fee? | **The receiver, under `Inclusive`.** `effective_payer_account_ids` named the recipient, exactly as the protobuf predicted. Prism ships `Inclusive` so the buyer is debited precisely what the 402 quoted. |
-| 3 | Preflight blind spot with `net_of_transfers = true` | **Not reachable in Prism**, because choosing `Inclusive` means the payer never needs `amount + fee`. The gap in `createHederaPreflightTransfer` is real but only bites exclusive-fee designs. |
+| 2 | `net_of_transfers` — which side absorbs the fee? | **The receiver, under `Inclusive`.** `effective_payer_account_ids` named the recipient, exactly as the protobuf predicted. Lockstep ships `Inclusive` so the buyer is debited precisely what the 402 quoted. |
+| 3 | Preflight blind spot with `net_of_transfers = true` | **Not reachable in Lockstep**, because choosing `Inclusive` means the payer never needs `amount + fee`. The gap in `createHederaPreflightTransfer` is real but only bites exclusive-fee designs. |
 | 4 | Collector association revoked or slots exhausted | Collectors are created with `maxAutomaticTokenAssociations: -1`, which satisfied the requirement at token-create time. The create → associate → `TokenFeeScheduleUpdate` fallback was written and never needed. |
-| 5 | Payee count exceeding the balance-adjustment ceiling | Not approached. Prism's transfer produces four adjustments (payer, `payTo`, two collectors) against a limit of 20. |
+| 5 | Payee count exceeding the balance-adjustment ceiling | Not approached. Lockstep's transfer produces four adjustments (payer, `payTo`, two collectors) against a limit of 20. |
 | 6 | Fee payer hardcoded and the facilitator rotates | Avoided by construction: the client reads `extra.feePayer` from every 402. The two public facilitators do use different accounts, confirming the hazard was real. |
 | 7 | Threshold-key payer fails signature verification | **It does not.** Agent `0.0.9795796` is a `KeyList` with threshold 2 and both facilitators verified it, returning `payer: 0.0.9795796`. Mirror node reports its key type as `ProtobufEncoded`. Pins held at `@hiero-ledger/sdk` 2.85.0 / `@hiero-ledger/proto` 2.31.0. |
-| 8 | Min/max ordering silently flattening the percentage | Sidestepped — Prism sets neither `min` nor `max`, so `fractional_amount` always governs. |
+| 8 | Min/max ordering silently flattening the percentage | Sidestepped — Lockstep sets neither `min` nor `max`, so `fractional_amount` always governs. |
 | 9 | The "is this a real payment?" objection | Partly answered by the HBAR control route, which runs the same service through the same facilitator in a bounty-named asset. The rest is disclosure: the 402 declares every payee, and `/v1/audit/:txId` lets anyone recompute the split from public data. |
 | 10 | Mirror-node lag between receipt and queryable record | Real and routine. Every read path retries with backoff; the settlement hook polls briefly and reports `indexed: false` rather than claiming no split occurred. |
 

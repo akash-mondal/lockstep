@@ -55,8 +55,8 @@ const client = Client.forTestnet().setOperator(AccountId.fromString(OPERATOR_ID)
 const step = (n, m) => console.log(`\n[${n}] ${m}`);
 
 async function party(role) {
-  if (state.prism?.[role]) {
-    const p = state.prism[role];
+  if (state.lockstep?.[role]) {
+    const p = state.lockstep[role];
     console.log(`    ${role.padEnd(9)} ${p.id}  (reused)`);
     return { id: p.id, key: PrivateKey.fromStringECDSA(p.key) };
   }
@@ -68,7 +68,7 @@ async function party(role) {
     .execute(client)
     .then((r) => r.getReceipt(client));
   const id = receipt.accountId.toString();
-  state.prism = { ...(state.prism ?? {}), [role]: { id, key: key.toStringRaw() } };
+  state.lockstep = { ...(state.lockstep ?? {}), [role]: { id, key: key.toStringRaw() } };
   console.log(`    ${role.padEnd(9)} ${id}`);
   return { id, key };
 }
@@ -88,8 +88,8 @@ try {
   console.log("    the operator alone cannot rewrite who gets paid");
 
   step(3, "Minting PRSM with the split baked into its fee schedule");
-  if (state.prism?.tokenId) {
-    console.log(`    token ${state.prism.tokenId} already minted — skipping`);
+  if (state.lockstep?.tokenId) {
+    console.log(`    token ${state.lockstep.tokenId} already minted — skipping`);
   } else {
     const fees = SHARES.map(({ role, numerator, denominator }) =>
       new CustomFractionalFee()
@@ -107,7 +107,7 @@ try {
     // Every fee collector must sign the create — naming an account is not enough,
     // it has to consent, or the network rejects with INVALID_SIGNATURE.
     const receipt = await new TokenCreateTransaction()
-      .setTokenName("Prism Credit")
+      .setTokenName("Lockstep Credit")
       .setTokenSymbol("PRSM")
       .setTokenType(TokenType.FungibleCommon)
       .setSupplyType(TokenSupplyType.Infinite)
@@ -117,16 +117,16 @@ try {
       .setSupplyKey(operatorKey.publicKey)
       .setFeeScheduleKey(feeScheduleKey)
       .setCustomFees(fees)
-      .setTokenMemo("Prism — one x402 payment, refracted at consensus")
+      .setTokenMemo("Lockstep — one x402 payment, refracted at consensus")
       .freezeWith(client)
       .sign(upstream.key)
       .then((t) => t.sign(referrer.key))
       .then((t) => t.execute(client))
       .then((r) => r.getReceipt(client));
-    state.prism.tokenId = receipt.tokenId.toString();
-    console.log(`    minted ${state.prism.tokenId}`);
+    state.lockstep.tokenId = receipt.tokenId.toString();
+    console.log(`    minted ${state.lockstep.tokenId}`);
   }
-  const tokenId = state.prism.tokenId;
+  const tokenId = state.lockstep.tokenId;
 
   step(4, "Reading the token config back from the public mirror node");
   let info;
@@ -191,7 +191,7 @@ try {
   }
   console.log(`    assessed_custom_fees: ${record?.assessed_custom_fees?.length ?? 0} entries`);
   console.log(`    https://hashscan.io/testnet/transaction/${mirrorId}`);
-  state.prism.proofTx = mirrorId;
+  state.lockstep.proofTx = mirrorId;
 
   const fees = record?.assessed_custom_fees ?? [];
   const ok = fees.length === 2 &&

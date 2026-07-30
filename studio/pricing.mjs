@@ -34,7 +34,7 @@ export const MARGIN_NOTE = "quote = measured cost x MULTIPLIER; the remainder is
 export const MULTIPLIER = 3.0;
 
 /** Nobody sells a video for less than this, however small the plan. */
-export const FLOOR = 300_000_000n; // 3 PRISM
+export const FLOOR = 300_000_000n; // 3 LOCKSTEP
 
 /**
  * Price a plan.

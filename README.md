@@ -3,83 +3,66 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="./docs/logo-light.svg">
-  <img src="./docs/logo-dark.svg" alt="Prism" width="560">
+  <img src="./docs/logo-dark.svg" alt="Lockstep" width="560">
 </picture>
 
-**Revenue splits for [x402](https://x402.org) payments, performed by [Hedera](https://hedera.com) at consensus.**
+**Spending limits for [x402](https://x402.org) agents, enforced by the [Hedera](https://hedera.com) ledger.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![x402](https://img.shields.io/badge/x402-v2%20%C2%B7%20exact-6366f1)](https://docs.x402.org)
-[![Hedera](https://img.shields.io/badge/Hedera-testnet-8259ef)](https://hashscan.io)
+[![Hedera](https://img.shields.io/badge/Hedera-testnet%20%C2%B7%20HBAR-8259ef)](https://hashscan.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933)](https://nodejs.org)
-[![No contracts](https://img.shields.io/badge/smart%20contracts-none-e9a63f)](#why-hedera)
+[![No contracts](https://img.shields.io/badge/smart%20contracts-none-25b394)](#why-hedera)
 
 </div>
 
-x402 pays one account. A real service has people behind it who are owed a cut: the data
-provider whose feed answered the call, the referrer that sent the buyer, the model that
-generated the asset. Paying them normally means a second transaction, a splitter contract, or
-a keeper job that moves money later.
+An agent that buys its own materials spends money with nobody watching. Every guardrail in
+this space is application-layer: a ceiling checked by the agent's own code, or a row in the
+operator's database. Those are policies a process can skip, and a jailbroken or looping
+agent skips them.
 
-**Prism divides the payment inside the transfer.** The buyer's agent signs one clean transfer
-of exactly the quoted amount to exactly one account. Consensus nodes assess the split and
-merge it into that same `CryptoTransfer`, so by the time the payment is final the money is
-already in every payee's account. No splitter contract, no `distribute()` call, nothing to run
-afterwards, and one network fee instead of four.
+**Lockstep makes the limit a property of the account.** The agent's wallet is a Hedera
+`KeyList` with threshold 2. The agent holds one key; a co-signer service holds the other. A
+compromised agent cannot overspend because the key material it possesses is
+**insufficient**, not because its code declines to. That is arithmetic on signatures,
+evaluated by consensus nodes.
 
-**It is built on Hedera specifically and would not work anywhere else.** The split is a list of
-[`FractionalFee`](https://hips.hedera.com/hip/hip-18) entries on the token record: configuration,
-not code, with no bytecode to deploy or audit. Who may change it is a
-[`ThresholdKey`](https://docs.hedera.com/hedera/sdks-and-apis/sdks/keys/create-a-threshold-key)
-across the payees themselves, enforced by the network. Every assessed share is published in the
-record as `assessed_custom_fees`, so anyone can recompute the split from the free public mirror
-node. The buyer pays **zero network fees** and holds nothing but the payment asset.
+**It is built on Hedera specifically and would not work anywhere else.** On an EVM chain an
+externally-owned account is one secp256k1 key; multi-party control means Gnosis Safe or
+ERC-4337, which is a contract you deploy, audit and maintain. On Hedera it is a
+[field on the account](https://docs.hedera.com/hedera/sdks-and-apis/sdks/keys/create-a-threshold-key),
+validated by the network. Everything settles in **native HBAR**, the buyer pays **zero
+network fees**, and anyone can recompute the whole bill from the free public mirror node.
+There is **no smart contract in this system**.
 
-**[Prism Studio](#prism-studio)** is the first service on it: an agent that buys images,
-narration and music, composes a video, and sells it, refracting each sale back to the suppliers
-that made it.
+**[Lockstep Studio](#lockstep-studio)** is the first service on it: an agent that is paid to
+make a video, buys its own images, narration, music and transcription over x402, composes
+and renders the result, and hands back a bill where every input is a settlement you can
+check.
 
 ```js
-// The split is a field on the token, set once, at mint.
-await new TokenCreateTransaction()
-  .setTokenName("Prism").setTokenSymbol("PRSM").setDecimals(6)
-  .setCustomFees([
-    new CustomFractionalFee()                     // 15% to the upstream data provider
-      .setNumerator(15).setDenominator(100)
-      .setFeeCollectorAccountId(upstream)
-      .setAssessmentMethod(FeeAssessmentMethod.Inclusive),
-    new CustomFractionalFee()                     // 10% to whoever referred the buyer
-      .setNumerator(10).setDenominator(100)
-      .setFeeCollectorAccountId(referrer)
-      .setAssessmentMethod(FeeAssessmentMethod.Inclusive),
-  ])
-  // 2-of-3 across the payees: nobody rewrites the split alone, including us.
-  .setFeeScheduleKey(new KeyList([svcKey, upKey, refKey], 2))
-  .execute(client);
+// The agent proposes. The co-signer decides against the bytes that will be submitted.
+const decision = await fetch(`${POLICY_URL}/cosign`, {
+  method: "POST",
+  headers: { authorization: `Bearer ${token}` },
+  body: JSON.stringify({ transactionBase64, challenge: accepted }),
+}).then((r) => r.json());
 
-// Then serve x402 the ordinary way. Nothing here knows about the split.
-app.use(paymentMiddleware({
-  "GET /v1/token/:id/cost": {
-    accepts: [{ scheme: "exact", network: "hedera:testnet",
-                price: { asset: PRSM, amount: "20000" }, payTo: service }],
-    extensions: { prism: {} },                    // declares the split in the 402
-  },
-}, server));
+if (!decision.approved) {
+  // Not "disallowed". Impossible: the agent holds 1 of 2 required signatures.
+  throw new Error(decision.reason);
+}
 ```
-
-The buyer signs a body crediting `service` the full `20000` and naming no collector. The ledger
-records service **+15000**, upstream **+3000**, referrer **+2000**.
 
 ---
 
 ## Table of contents
 
-- [How Prism works](#how-prism-works)
+- [How Lockstep works](#how-lockstep-works)
 - [Why Hedera](#why-hedera)
-- [Disclosure](#disclosure)
-- [Where this sits in the spec](#where-this-sits-in-the-spec)
-- [Guards on the buyer](#guards-on-the-buyer)
-- [Prism Studio](#prism-studio)
+- [The co-signer](#the-co-signer)
+- [Lockstep Studio](#lockstep-studio)
+- [The receipt](#the-receipt)
 - [Verification](#verification)
 - [Quickstart](#quickstart)
 - [API](#api)
@@ -91,340 +74,272 @@ records service **+15000**, upstream **+3000**, referrer **+2000**.
 
 ---
 
-## How Prism works
+## How Lockstep works
 
 ### The gap
 
-The `exact` scheme requires the amount credited to `payTo` to equal the quote exactly, with **no
-additional positive net transfers to any other party**. That stops a resource server tricking a
-sponsoring fee payer into funding transfers it never agreed to.
+x402 makes an agent able to pay. It says nothing about stopping one. An agent that sells
+work has to buy work, and the moment it spends unattended you need an answer to "what stops
+it spending everything?"
 
-It also prohibits application-layer splitting. What is left is worse: a **splitter contract** is
-not atomic and holds the referrer's money until someone triggers release; a **second transaction**
-adds a keeper, a queue, a retry policy and a window where the seller holds money it owes; and
-**charging the buyer more** debits above the quote, which honest sellers will not do.
+Every available answer is a promise. A `maxAmount` in the agent's own tool call is checked
+by the agent. A spend limit in the operator's dashboard is checked by the operator's code.
+A budget in a system prompt is a suggestion. All of them assume the thing being limited is
+cooperating, which is exactly the assumption that fails when an agent is compromised,
+jailbroken, or simply stuck in a loop buying the same image forty times.
 
-### What Prism does about it
+### What Lockstep does about it
 
-Prism does not add a recipient. It changes the **asset**. An HTS fungible token carries a
-`custom_fees` list, each `FractionalFee` naming a fraction and a collector, and when the token
-moves consensus nodes assess every fee and merge the resulting transfers into the original
-transaction. From
-[`custom_fees.proto`](https://github.com/hiero-ledger/hiero-consensus-node/blob/main/hapi/hedera-protobuf-java-api/src/main/proto/services/custom_fees.proto):
+The agent's account requires two signatures. It holds one.
 
-> *"The transfer of value SHALL be merged into the original transaction to minimize the number
-> of actual transfers. This descriptor presents the fee assessed separately in the record
-> stream so that the details of the fee assessed are not hidden in this process."*
+```
+agent wallet   KeyList, threshold 2
+                 ├── agent key        held by the agent process
+                 └── co-signer key    held by a separate service, 0600, loopback
 
-Two consequences carry the design. **The split is absent from the signed body**, so a facilitator
-decoding the payload sees one clean transfer to `payTo` and every check passes as written. **The
-split is fully present in the record**, each share an `AssessedCustomFee` with its amount, its
-collector, and the account that effectively bore it. Nothing is hidden after the fact; it is
-simply not in the part the buyer signs.
+payment        agent signs            1 of 2, not yet spendable
+               co-signer signs        2 of 2, submitted
+               co-signer refuses      no signature exists, so no payment exists
+```
 
-Because fees are merged rather than appended, paying four parties costs the same network fee as
-paying one. **The split is free because it is not a separate action.**
+The refusal is not a rejection the agent can retry past. There is no second path. Consensus
+nodes will not accept the transfer without both signatures, wherever those keys live.
 
 ### The shape on the wire
 
 ```
-agent  0.0.9795796      ThresholdKey 2-of-2, holds zero HBAR
+agent  0.0.9795796      ThresholdKey 2-of-2, holds only what it means to spend
 
-  → GET /v1/token/0.0.429274/cost
+  → POST /v1/image
   ← 402  PAYMENT-REQUIRED
-         20000 of 0.0.9795837 → 0.0.9795832
+         25000000 tinybar of 0.0.0  →  0.0.9766034
          extra.feePayer 0.0.9185802          the facilitator sponsors the network fee
-         extensions.prism.info               the split, declared before anything is signed
-           service        7500 bps   via payTo
-           upstream-data  1500 bps   via assessed_custom_fee
-           referrer       1000 bps   via assessed_custom_fee
 
-  agent signs                               1 of 2 signatures, not yet spendable
-  policy co-signs                           within cap, payee and asset allowlisted
+  agent signs                                1 of 2 signatures
+  → POST /cosign  {transactionBase64, challenge}
+  ← 200  approved: within cap, payee and asset allowlisted     2 of 2
 
-  → GET /v1/token/0.0.429274/cost   PAYMENT-SIGNATURE: <partially signed transfer>
-  ← 200  PAYMENT-RESPONSE
-         transaction 0.0.9185802-1785182206-410586804
-         extensions.prism.refracted         what the network actually assessed
-           upstream-data  3000
-           referrer       2000
-         audit /v1/audit/0.0.9185802-1785182206-410586804
+  → POST /v1/image   PAYMENT-SIGNATURE: <fully signed transfer>
+  ← 200  paid and served
+         transaction 0.0.9185802-1785429017-537367644
 ```
 
-**The split is derived from the token's own fee schedule, never from server config.** The 402 is
-built by reading `custom_fees` off the mirror node, so what Prism advertises cannot drift from
-what the ledger will do. It is cached for 15 seconds, which bounds the drift rather than
-eliminating it.
+**The co-signer decides against the bytes, never the summary.** A compromised agent controls
+the description it hands over, so the challenge is used only to look up the cap; the payee,
+the amount and the asset are all re-derived from the transaction that will actually be
+submitted.
 
 ---
 
 ## Why Hedera
 
-### The split is configuration, not code
+### The limit is a field on the account, not a contract
 
-ERC-20 has no protocol hook for dividing a transfer. Two EVM routes reach the same outcome and
-both mean owning code. A **splitter contract** is not atomic;
-[x402aff](https://github.com/MiroShark/x402aff)'s own README says so: *"Payouts aren't atomic...
-**releasing** it (`distribute`) is a separate permissionless call."* A **fee-on-transfer token**
-genuinely is atomic, but that fan-out is bytecode you wrote and audit, a permanent exploit
-surface, notorious for breaking integrations that assume `transfer(amount)` moves `amount`.
+This is the whole argument, and it is narrow enough to survive scrutiny.
 
-So the claim is narrow: **on EVM an atomic split needs custom token bytecode you are responsible
-for; on Hedera it is a field on the token.** For a standard whose premise is software paying
-software unattended, "nothing to audit" is the difference between trusting a public config and
-trusting somebody's Solidity. The splitter pattern is not even available here in Base's form,
-since a plain Hedera `CryptoTransfer` to a contract account does not execute its code.
+An EVM externally-owned account is one key. To require two signatures you deploy a contract:
+Gnosis Safe, or an ERC-4337 smart account. That contract is bytecode you are responsible
+for, with an audit surface, a deployment cost and an upgrade story. Every agent wallet is a
+deployment.
 
-### The payees govern the split, not the seller
+On Hedera, `KeyList.withThreshold(2)` passed to `AccountCreateTransaction` produces an
+account that behaves like any other and requires two signatures. Nothing is deployed. There
+is nothing to audit but the policy you wrote.
 
-The `fee_schedule_key` authorises exactly one thing, replacing the token's custom-fee list. Prism
-sets it to a 2-of-3 `KeyList` across the payees, so the network rejects a `TokenFeeScheduleUpdate`
-without two of them signing. The EVM equivalent is an `onlyOwner` setter behind a proxy, where "it
-only changes the split" is a claim about source code rather than a property of the ledger, and the
-admin could change anything.
+For a standard whose premise is software paying software with no human present, that is the
+difference between a guarantee you can read off the ledger and one you take on trust from
+somebody's Solidity.
 
-**Stated honestly:** all three payee keys were generated by one operator and sit on one machine.
-The enforcement is real and would bind independent parties; the *independence* is not something a
-testnet build can demonstrate.
+### The reference signer already supports it
 
-### The buyer needs no HBAR
+This rail is not a workaround; it is already in the standard's own Hedera implementation.
+From `@x402/hedera@2.19.0`:
 
-Hedera's contribution to x402 is the fee-payer model: the client sets `transactionId.accountId` to
-the facilitator's account and partially signs, then the facilitator signs as fee payer and submits.
-The buyer holds the payment asset and nothing else; collectors hold nothing, since they only
-receive.
+```js
+function keySignsTransaction(key, tx) {
+  if (key instanceof PublicKey) return key.verifyTransaction(tx);
+  if (key instanceof KeyList) {
+    const keys = key.toArray();
+    const threshold = key.threshold && key.threshold > 0 ? key.threshold : keys.length;
+    return keys.filter((k) => keySignsTransaction(k, tx)).length >= threshold;
+  }
+  return false;
+}
+```
+
+Both public facilitators verify a threshold-key payer without special-casing. It works
+today, and as far as we can tell nobody is exercising it.
+
+### The buyer pays no network fees
+
+Hedera's contribution to x402 is the fee-payer model: the client sets
+`transactionId.accountId` to the facilitator's account and partially signs, then the
+facilitator signs as fee payer and submits. Verified on every settlement here, the buyer's
+balance moves by exactly the quoted amount and not one tinybar more.
+
+That matters more for an agent than for a person. An agent can be provisioned with exactly
+what it is allowed to spend, with no gas float to reason about and no top-up loop.
 
 ### Anyone can check it for free
 
-The mirror node is public, unauthenticated and free. Two GETs recompute everything:
+The mirror node is public, unauthenticated and free:
 
 ```bash
-curl https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9795837
-curl https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9185802-1785182206-410586804
+curl https://testnet.mirrornode.hedera.com/api/v1/accounts/0.0.9795796
+curl https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9185802-1785429017-537367644
 ```
 
-**And no smart contract anywhere.** The mechanism is a token field, the governance is an account
-key, the proof is the record stream. Nothing is deployed.
+The first shows the payer's key type is `ProtobufEncoded`, meaning a KeyList rather than a
+single key. The second shows what moved.
 
 ### Things learned the hard way
 
-Two of these cost a failed run and neither appears in the HIPs or SDK docs.
+**An account with zero auto-association slots cannot receive an HTS token at all**, and the
+transfer fails at consensus with `TOKEN_NOT_ASSOCIATED_TO_ACCOUNT` *after* `/verify` has
+already passed. Create agent wallets with `setMaxAutomaticTokenAssociations(-1)`.
 
-**A fee collector must sign `TokenCreateTransaction`.** Naming an account in
-`feeCollectorAccountId` is not enough; it has to consent, or the network returns
-`INVALID_SIGNATURE`. This is separate from, and additional to, the
-`TOKEN_NOT_ASSOCIATED_TO_FEE_COLLECTOR` association rule.
+**A fee collector is structurally a terminal payee.** It cannot forward to a non-exempt
+account: under `Inclusive` assessment the receiver bears the fee, so a collector sending
+onward would have to collect on its own payment, and the network refuses the whole transfer
+with `FAIL_INVALID`, a status that says nothing about the cause. Measured three ways in
+[HEDERA.md](./HEDERA.md).
 
-**The mirror node returns `effective_payer_account_ids`**, plural and an array, where the
-protobuf documents a singular `effective_payer_account_id`. Reading the documented name yields
-`undefined` on an otherwise correct record.
-
-**A misordered min/max silently flattens a percentage into a flat fee.** The protobuf warns that
-if `maximum_amount <= minimum_amount` then `fractional_amount` has no effect. Prism sets
-neither, so the fraction always governs.
-
-**Testnet USDC can never carry a split.** `0.0.429274` reports `"fee_schedule_key": null`, and a
-token created without that key can never acquire one. Not Circle declining, the ledger refusing.
-This is why Prism mints its own asset; the `exact` scheme accepts any HTS fungible token by id,
-which makes that legal rather than a workaround.
+**A token minted without an admin key can never be renamed.** Its symbol is permanent from
+the moment of creation.
 
 ---
 
-## Disclosure
+## The co-signer
 
-The mechanism works *because* the split is invisible to the signed body. Good for compliance, bad
-for trust, so Prism ships a first-class x402 v2 extension that closes the gap without touching the
-transfer.
+It runs as its own process and is the only thing that reads `.policy.key`. The agent process
+never loads that material and reaches the co-signer over HTTP with a bearer token.
 
-**In the 402, before anything is signed.** `enrichPaymentRequiredResponse` declares every payee and
-share, read live from the token's fee schedule. The buyer consents by paying.
+**The separation is real, and that took a correction.** An earlier version imported the
+co-signer in-process with both keys in one file. That gave the account the right *shape*
+on-chain while protecting nothing. A threshold key whose halves live in one process is
+theatre.
 
-**In `PAYMENT-RESPONSE`, after settlement.** `enrichSettlementResponse` returns the fees actually
-assessed, a HashScan link, and an audit URL.
+**What the boundary is, precisely.** A separate process, a separate `0600` key file, bearer
+auth, loopback binding. That defeats a compromised *agent*, which is the threat this design
+targets. It does not defeat a compromised *host*: anything with root can read the file.
+Production would put the co-signer in a KMS, an HSM or another machine, and the code is
+arranged so swapping the signer is the only change. The on-chain guarantee is unaffected
+either way.
 
-**In a keyless audit anyone can run.** `GET /v1/audit/:txId` recomputes a settlement against the fee
-schedule in force *at that transaction's consensus timestamp*, from public data, holding no key.
+### It refuses eleven ways
 
-The audit checks identity as well as arithmetic: the asset, that the service account was the sole
-non-collector recipient, that a single sender paid, and that fees were actually assessed.
-**Conservation of value alone is necessary and nowhere near sufficient**; without those checks it
-would verify any balanced transfer that never touched Prism. Its scope: token movements against a
-fee schedule. It does not attest to off-chain custody, to who controls the collector accounts, or
-to whether the served data was correct. Inside that scope a mismatch is provable rather than
-arguable.
-
----
-
-## Where this sits in the spec
-
-The sharpest question about Prism, so it goes in the README rather than a footnote.
-
-**What is proven.** The scheme's checks read the client-signed body:
-`ExactHederaScheme.validateTransferSemantics` decodes with `Transaction.fromBytes` and inspects
-`hbarTransfers` and `tokenTransfers`. Custom fees are not there. `settle()` re-runs the same checks
-and submits; nothing inspects the resulting record. Both public facilitators verified and settled a
-fee-bearing payment, [via
-x402.org](https://hashscan.io/testnet/transaction/0.0.9185802-1785181090-410250982) and [via
-blocky402](https://hashscan.io/testnet/transaction/0.0.7162784-1785181097-148987684), tested
-separately.
-
-**What is not proven.** That this is what the authors intended. At settlement `payTo`'s net credit
-is the quote minus the disclosed fee, so a reader applying amount-exactness to the *ledger outcome*
-rather than the *signed transfer list* would say Prism violates it. The alternative,
-`net_of_transfers: true`, debits the buyer more than quoted, which is worse.
-
-The claim is narrow: **accepted by every current implementation, with the tension stated openly.**
-The spec's Fee Payer Safety note does contemplate the mechanism, permitting the fee payer to appear
-as a positive entry *"for example when collecting fees or custom fee distributions"*, but that
-clause concerns the fee payer rather than `payTo`'s net credit and does not license this
-construction.
-
----
-
-## Guards on the buyer
-
-An agent that buys its own materials spends money unattended. Prism's payer account is a Hedera
-`KeyList` with threshold 2: the agent holds one key, a co-signer service the other. **A compromised
-or hallucinating agent cannot overspend, because the key material it possesses is insufficient**,
-not because its code declines to. Every other guardrail in this space is application-layer, a limit
-in the agent's own code or a row in the operator's database, which a process could skip. This one
-is arithmetic on signatures, evaluated by consensus nodes. On EVM an externally-owned account is
-one key and multi-party control means Safe or ERC-4337, a contract; on Hedera it is a field on the
-account.
-
-**The separation is real, and that took a correction.** The co-signer runs as its own process and
-is the only reader of `.policy.key`; the agent never loads that material and reaches it over HTTP
-with a bearer token. An earlier version imported the co-signer in-process with both keys in one
-file, giving the account the right *shape* on-chain while protecting nothing. A threshold key
-whose halves live in one process is theatre.
-
-**The boundary, precisely.** A separate process, a separate `0600` key file, bearer auth, loopback
-binding. That defeats a compromised *agent*, the threat this targets. It does not defeat a
-compromised *host*, since anything with root can read the file. Production would move the
-co-signer to a KMS, an HSM or another host, and the code is arranged so swapping the signer is the
-only change. The on-chain guarantee is unaffected either way.
-
-### The co-signer decides against the bytes, not the summary
-
-A compromised agent controls the summary it hands over, so the challenge is used only to look up
-the cap; payee, amount and asset are re-derived from the transaction that will be submitted.
-
-`npm run attack` is eleven adversarial cases, each pairing a plausible challenge with a malicious
-transaction. It found two live holes in our own code:
+`npm run attack` pairs a plausible challenge with a malicious transaction, eleven times. It
+found two live holes in our own policy:
 
 - The policy allowlisted `challenge.payTo` without checking who the transaction actually
   **credited**, so a benign-looking challenge could carry a transfer to any account.
 - The policy validated the HBAR and fungible maps but never looked at **NFT transfers or
-  allowance flags**. A Hedera `TransferTransaction` carries all of them in one signed body, so a
-  numerically flawless payment could walk an NFT out of the agent's account while every amount
-  check passed.
+  allowance flags**. A Hedera `TransferTransaction` carries all of them in one signed body,
+  so a numerically flawless payment could walk an NFT out while every amount check passed.
 
-The fix for the second is a whitelist, not another special case: anything outside "plain transfers
-of the one expected asset" is refused, **including shapes that do not exist yet**. A policy that
-enumerates known attacks is obsolete the moment the SDK grows a field.
+The fix for the second is a whitelist rather than another special case: anything outside
+"plain transfers of the one expected asset" is refused, **including shapes that do not exist
+yet**. A policy that enumerates known attacks is obsolete the moment the SDK grows a field.
 
 ---
 
-## Prism Studio
+## Lockstep Studio
 
-A revenue split only means something when somebody upstream did work and is owed money. Prism
-Studio sells short generated videos: a buyer asks for one and pays once, and behind that payment
-the agent works like a small production house:
+A guardrail only means something when there is real money to lose. Lockstep Studio is an
+agent with a wallet and a job.
 
-1. Writes a script and a shot list.
-2. Buys each scene image, `gemini-3.1-flash-lite-image`, **~3.4¢ a frame**, seeded so a re-run
-   costs nothing.
-3. Buys narration, `gemini-3.1-flash-tts-preview`, returned as raw 24 kHz PCM.
-4. Buys a music bed, `lyria-3-clip-preview`, returned as MP3.
-5. Composes and renders the finished video with **HyperFrames**.
+It sells short narrated videos. A requesting agent sends a brief, attaches files, argues
+about the plan, and pays. Then the studio's agent does the work of a small production house
+and buys every input over x402:
 
-Every purchase in steps 2 to 4 is its own x402 settlement. **The studio is a buyer on those and a
-seller on the video it delivers**, the shape the agent economy is going to have and the reason the
-buy-side guards exist.
+1. Reads the attached brief and brand notes, and writes a storyboard.
+2. Buys each scene image, `gemini-3.1-flash-lite-image`, seeded so a re-run costs nothing.
+3. Buys narration, `gemini-3.1-flash-tts-preview`.
+4. Buys a music bed, `lyria-3-clip-preview`.
+5. Buys word timings, `scribe_v1`, so captions land on the spoken word.
+6. Composes with **HyperFrames**, passes `lint` and `check`, and renders.
+7. Buys a vision pass to look at its own frames, and fixes what it finds.
 
-### What the split is for
+**Every one of those is a separate x402 settlement in HBAR**, and every one is checked
+against the job's remaining budget *before* it happens. The agent cannot loop, cannot retry
+past the ceiling, and cannot spend one job's money on another. Not because it is told not
+to, but because the code that moves money refuses and the key it holds is insufficient.
 
-Two rails doing different jobs; confusing them means paying suppliers twice. **Direct x402 pays
-cost of goods**, metered per call when it happens. **Refraction pre-funds the supply pool**: the
-custom fee on a sale lands in the account the studio spends from, so selling a video capitalises
-the next one atomically, in the same transaction, with nothing to reconcile and nobody to trust.
-**No splitter contract can do this**, because a contract must be told to release funds by
-something that runs later.
+### Two phases, because a price must precede the work
 
-### The arithmetic has to close before you mint
+`exact` needs a firm amount before anything runs, and the cost of a video is not knowable
+until it has been planned. So planning is its own cheap purchase that returns a quote, and
+rendering is priced from the plan it refers to, through the per-request price callback the
+scheme already blesses.
 
-Shares are fixed on the token before the first sale and changing them takes 2-of-3 signatures, so
-this is a design step, not a tuning knob. One six-scene video costs **~$0.24**, almost entirely
-images. For pool share `s` and price `P` the pool survives only if `s·P ≥ cost`, so at 15% the
-price must exceed $1.67. Prism Studio prices at **$2.00** and splits **50% studio / 35% supply pool
-/ 15% referrer**, leaving the pool ~70¢ against ~25¢ of real cost, with headroom for a longer
-script or a better image model without re-minting.
+The quote is the job's own measured cost times a multiplier. The difference is the making
+charge, and the receipt reports it rather than leaving it to be worked out from two other
+numbers.
 
-Two honest notes. The music model exposes no duration control and has produced between 26 s and
-173 s for the same request, so its cost varies about 2×, and `exact` has no refund path, so that
-variance is quoted conservatively and absorbed. And the studio needs its **own** token: the
-accounts already collecting on PRSM carry `all_collectors_are_exempt`, so reusing one as a payer
-would silently skip the split.
+| job | asset cost | quote | making charge |
+|---|---|---|---|
+| 3 scenes | 1.40 ℏ | 4.20 ℏ | 2.80 ℏ |
+| 6 scenes | 2.15 ℏ | 6.45 ℏ | 4.30 ℏ |
+| 12 scenes | 3.65 ℏ | 10.95 ℏ | 7.30 ℏ |
 
-### Status
+### One workspace per job
 
-**Built and verified:** the primitive, and the studio's asset purchasing
-(`studio/suppliers.mjs`, working against all three models).
-**Not built yet:** composition, the studio's own token, and the seller-side routes. This section
-describes a design and says so.
+Each request gets its own directory, and the agent is launched with its `cwd` set to it. The
+failure being designed out is a shared scratch directory: everything looks fine until one
+agent globs `*.jpg` and picks up another's scene. Verified by running two agents
+concurrently, each given a secret, and checking neither could name the other's.
+
+---
+
+## The receipt
+
+This is what the requesting agent gets back, and it is the part worth stealing.
+
+```
+=== WHAT I PAID
+  6.45 ℏ  ->  one transfer, one account
+  https://hashscan.io/testnet/transaction/...
+  I paid no network fee; the facilitator sponsored it.
+
+=== WHAT IT BOUGHT ON MY BEHALF
+  scene 1 image              0.25 ℏ   https://hashscan.io/testnet/transaction/...
+  scene 2 image              0.25 ℏ   https://hashscan.io/testnet/transaction/...
+  ...
+  narration                  0.05 ℏ   https://hashscan.io/testnet/transaction/...
+  word timings               0.10 ℏ   https://hashscan.io/testnet/transaction/...
+  music bed                  0.50 ℏ   https://hashscan.io/testnet/transaction/...
+  reviewing the render       0.08 ℏ   https://hashscan.io/testnet/transaction/...
+  10 purchases, 2.23 ℏ of inputs
+  Making charge kept by the studio: 4.22 ℏ
+
+=== THE VIDEO
+  http://.../v1/download/<job>?token=<capability>
+```
+
+Plenty of systems can show an agent paying for something. **A bill that decomposes into the
+purchases that produced the work, every line checkable by someone who does not trust us, is
+the thing nobody else has.** It costs nothing extra: each purchase was already a settlement,
+so the receipt is just refusing to throw the trail away.
 
 ---
 
 ## Verification
 
 ```bash
-npm run verify     # 24 checks, end to end, against the live network
+npm run verify     # end to end, against the live network
 npm run attack     # 11 adversarial cases against the co-signer
-npm run reconcile  # every payment ever settled, summed from public balances
 ```
 
-`npm run verify` mocks nothing. It drives a real payment through the running server to a public
-facilitator, then re-derives every on-chain claim from mirror-node data: the fee schedule, the
-threshold key on the payer, the 402 disclosure, the assessed fees, and conservation of value. It
-cannot prove off-chain properties (key custody, the independence of the payee accounts, the safety
-of the plugin), which rest on reading the code.
-
-### The balances have to agree
-
-A linked transaction can be cherry-picked. A running balance cannot.
-
-```
-$ npm run reconcile
-
-  service   0.0.9795832    75%      365000
-  upstream  0.0.9795833    15%       69000
-  referrer  0.0.9795835    10%       46000
-
-  implied gross volume, derived independently:
-    from upstream  460,000
-    from referrer  460,000
-    collectors agree: yes
-
-  gap               20,000
-  1 payment(s) reached the service without splitting
-  23 payments did split
-```
-
-Work backwards from each collector: 69,000 at 15% implies 460,000 of gross volume; 46,000 at 10%
-implies the same. **Two independent derivations landing on one figure** means the split held
-across every payment, not only the ones we chose to link.
-
-The gap is the useful part. It is one payment made *from the token treasury*, which is permanently
-exempt from its own custom fees, so it did not split and nothing errored. The arithmetic surfaces
-that on its own, which is why the audit endpoint checks identity instead of trusting conservation
-of value.
+`npm run verify` mocks nothing. It drives a real payment through the running server to a
+public facilitator, then re-derives the on-chain claims from public mirror-node data. It
+cannot prove the off-chain properties, meaning key custody and the safety of the plugin.
+Those rest on reading the code.
 
 ---
 
 ## Quickstart
 
-Requires Node ≥ 20 and a funded Hedera testnet account. Budget roughly **35 HBAR** for a run from
-scratch; two `TokenCreateTransaction` calls at ~14.5 HBAR each dominate it.
+Requires Node ≥ 20 and a funded Hedera testnet account.
 
 ```bash
 npm install
@@ -434,58 +349,46 @@ npm run keygen        # operator keypair (ECDSA); fund the printed address at
                       #   portal.hedera.com/faucet
 npm run whoami        # resolve the 0.0.x that funding auto-created
 
-npm run gate1         # prove custom fees refract and render
-npm run gate2         # threshold payer settles via both public facilitators;
-                      #   also writes .policy.key, the co-signer's half
-npm run phase1        # mint PRSM with the split in its fee schedule
+npm run gate2         # build the threshold-key payer and settle through both
+                      #   public facilitators; also writes .policy.key
 
-npm run up            # both services, detached
+npm run up            # co-signer and resource server, detached
 npm run agent         # pay for a resource, end to end
-npm run agent -- --route risk    # the HBAR control route, split off
-npm run demo          # the whole story, paced for a recording
 ```
 
-Each setup step checks its own prerequisites, so running them out of order tells you which one is
-missing rather than throwing from inside `fs`.
+`npm run up` starts **two** processes because that is the design: the co-signer's key must
+be somewhere the agent cannot reach. The agent fails loudly when the co-signer is
+unreachable, which is correct, since without a second signature there is no payment to make.
 
-`npm run up` starts **two** processes because that is the design: the co-signer's key must be
-somewhere the agent cannot reach. Run them individually with `npm run policy` and `npm run server`
-if you prefer. The agent fails loudly when the co-signer is unreachable, which is correct, since
-without a second signature there is no payment to make.
+To run the studio as well you need the foundry and studio services and a model-provider key;
+see `.env.example`.
 
 ---
 
 ## API
 
-The resource server listens on **4051**, the co-signer on **4052**.
+### The foundry, everything in HBAR
 
-### Paid
-
-| Route | Price | Asset | Split |
-|---|---|---|---|
-| `GET /v1/token/:id/cost` | $0.02 | PRSM | **on** |
-| `GET /v1/account/:id/risk` | ~$0.002 | HBAR (`0.0.0`) | **off**, control |
-
-Both run through the same server, middleware and facilitator; the only difference is the asset,
-which is the cleanest demonstration of what a fee schedule adds. `/v1/token/:id/cost` answers
-*"what will this HTS token actually cost me to send?"*, since an x402 quote names an amount but the
-asset itself can carry custom fees, so the recipient may land less. **It is also the tool that
-discloses Prism's own split to a stranger.**
-
-### Free
-
-| Route | Returns |
+| Route | Price |
 |---|---|
-| `GET /v1/audit/:txId` | keyless recomputation of a settlement from public data |
-| `GET /v1/split` | the live fee schedule, read from the token |
-| `GET /health` | liveness, asset, facilitator |
-| `GET /.well-known/x402` | discovery document |
-| `GET /openapi.json` | OpenAPI 3.1 with `x-payment-info` |
+| `POST /v1/image` | 0.25 ℏ |
+| `POST /v1/speech` | 0.05 ℏ |
+| `POST /v1/music` | 0.50 ℏ |
+| `POST /v1/transcribe` | 0.10 ℏ |
+| `POST /v1/vision` | 0.08 ℏ |
 
-Audit is deliberately free and keyless. Charging for the ability to check us would defeat the
-point.
+### The studio
 
-### Co-signer
+| Route | Price | Does |
+|---|---|---|
+| `POST /v1/quote` | 0.05 ℏ | reads the brief and any attachments, returns a plan and a firm price |
+| `POST /v1/discuss` | 0.05 ℏ | revise direction, script, length or scene count; re-prices |
+| `POST /v1/render` | quoted | buy it; returns a job id immediately |
+| `GET /v1/job/:id` | free | progress |
+| `GET /v1/receipt/:id` | free | the bill, every line on HashScan |
+| `GET /v1/download/:id?token=` | free | the video |
+
+### The co-signer
 
 | Route | Returns |
 |---|---|
@@ -493,54 +396,55 @@ point.
 | `GET /policy` | the caps, allowlists and rate limit, published |
 | `GET /decisions` | the last 50 decisions, refusals included |
 
-A policy you cannot read is not a guarantee, and a guardrail nobody can review is hard to trust.
+A policy you cannot read is not a guarantee, and a guardrail nobody can review is hard to
+trust.
 
 ---
 
 ## Layout
 
 ```
-prism/                 the primitive
-  extension.mjs        the `prism` x402 extension: disclosure and receipts
+lockstep/              the primitive
+  policy.mjs           the co-signer's decision logic; sole reader of .policy.key
+  policy-server.mjs    the co-signer as its own process
   audit.mjs            keyless recomputation from public data
   mirror.mjs           public mirror-node reads, with backoff
-  policy.mjs           the co-signer's decision logic; sole reader of .policy.key
-  policy-server.mjs    the co-signer as its own process (4052)
+  extension.mjs        an x402 extension for disclosure and receipts
 
-studio/                the demo
-  server.mjs           Hono + @x402/hono resource server (4051)
-  agent.mjs            buyer: 402 → sign → co-sign → retry → settle
-  suppliers.mjs        image, narration and music generation
-  intel.mjs            the metered counterparty service
+studio/                the demo: an agent with a wallet and a job
+  studio.mjs           quote, discuss, render, job, receipt, download
+  worker.mjs           buy, compose, gate, render, review, deliver
+  purchase.mjs         spending, under a ceiling the agent cannot raise
+  plan.mjs             the storyboard the agent writes
+  harness.mjs          the agent, confined to one workspace
+  sessions.mjs         one directory per job
+  house-style.mjs      the standing direction handed to the agent
+  receipt.mjs          the bill
 
+foundry/               the supply side: five models, sold over x402
 scripts/               gates, setup and tests, each independently runnable
 packages/hak-x402-plugin/   x402 tools for the Hedera Agent Kit
-HEDERA.md              rail-by-rail justification, including what is deliberately not used
+HEDERA.md              rail-by-rail justification, including what is not used
 ```
 
 ---
 
 ## Hedera Agent Kit plugin
 
-`@hashgraph/hedera-agent-kit@4.0.0` ships exactly ten `core-*` plugins and **none speak x402**.
-Grepping the package's own source finds zero references. So a Kit-built agent can mint tokens and
-cannot pay for an HTTP resource.
+`@hashgraph/hedera-agent-kit@4.0.0` ships exactly ten `core-*` plugins and **none speak
+x402**; grepping the package's own source finds zero references. So a Kit-built agent can
+mint tokens and cannot pay for an HTTP resource.
 
 `packages/hak-x402-plugin` closes that with three v4 `BaseTool` tools:
+`x402_inspect_challenge` reads a 402 without paying, `x402_pay_resource` runs the full cycle
+under a `maxAmount` ceiling, and `x402_audit_settlement` verifies from the mirror node with
+no key.
 
-| Tool | Does |
-|---|---|
-| `x402_inspect_challenge` | read a 402 without paying; surfaces any disclosed split |
-| `x402_pay_resource` | the full cycle, under a `maxAmount` ceiling |
-| `x402_audit_settlement` | keyless verification from the mirror node |
-
-`x402_pay_resource` splits the work the way the Kit intends. `coreAction` reads the 402 and builds
-the transfer **frozen but unsigned**; `postCoreActionHook` then runs, which is where the Kit's
-spend limits, allowlists and audit hooks inspect a concrete payment; only then does
-`secondaryAction` sign and submit. Doing the payment inside `coreAction` settles on-chain before
-any policy has seen it, which is how the first version worked. Proof through the real `execute()`
-path: [`0.0.9185802-1785182810-628054679`](https://hashscan.io/testnet/transaction/0.0.9185802-1785182810-628054679),
-audited clean.
+`x402_pay_resource` splits the work the way the Kit intends: `coreAction` builds the transfer
+**frozen but unsigned**, `postCoreActionHook` runs so the Kit's own spend limits can inspect
+a concrete payment, and only then does `secondaryAction` sign and submit. Doing the payment
+inside `coreAction` settles on-chain before any policy has seen it, which is how the first
+version worked.
 
 ---
 
@@ -549,50 +453,39 @@ audited clean.
 | | |
 |---|---|
 | [x402](https://x402.org) v2, `exact` scheme | `@x402/core`, `@x402/hedera`, `@x402/hono`, `@x402/fetch` at 2.19.0 |
-| [Hedera](https://hedera.com) testnet | `@hiero-ledger/sdk` 2.85.0 |
+| [Hedera](https://hedera.com) testnet, native HBAR | `@hiero-ledger/sdk` |
 | Facilitators | [x402.org](https://x402.org/facilitator) and [blocky402](https://api.testnet.blocky402.com), both **unmodified** |
-| HIPs | [18](https://hips.hedera.com/hip/hip-18) and [573](https://hips.hedera.com/hip/hip-573), custom fees |
+| Video | [HyperFrames](https://hyperframes.heygen.com) |
 | Server | [Hono](https://hono.dev) |
 
-Prism runs against unmodified public facilitators on purpose. Running your own lets you relax any
-check you like, which proves nothing about interoperability.
+Lockstep runs against unmodified public facilitators on purpose. Running your own lets you
+relax any check you like, which proves nothing about interoperability.
 
 ---
 
 ## Status and known limits
 
-Testnet only. The primitive is settled on-chain and reproducible; Prism Studio is partly built, as
-marked above.
+Testnet only. Everything settles in native HBAR.
 
-**Fee-exempt payers silently do not refract.** The token treasury and every fee collector are
-permanently exempt from that token's custom fees. If one of them pays, the service receives the
-full amount and no split occurs, with no error and no warning. We hit this for real, and the audit
-endpoint is what catches it.
+**The boundary is process-level, not host-level.** A separate process with a `0600` key file
+defeats a compromised agent. It does not defeat root on the same machine. Production wants
+the co-signer in a different trust domain.
 
-**The split is per-token, not per-call.** Fractional fees live on the token, so every transfer of
-it carries the same shares. Per-referrer economics means one token per referrer.
+**A refusal costs the buyer nothing, but a failed render does.** Payment settles before the
+work starts, and `exact` has no refund path, so an unrecoverable failure leaves the buyer
+paid up. The honest fix is an unprompted refund transfer recorded in the receipt; it is not
+built yet.
 
-**A fee collector is a terminal payee.** It cannot forward to a non-exempt account: under
-`Inclusive` assessment the receiver bears the fee, so a collector sending onward would have to
-collect on its own payment, and the network rejects the transfer with `FAIL_INVALID`. Collectors
-receive; they do not route. Design the split as a list of people owed money, not as a set of
-accounts that pass value along.
+**The quote is a firm price on an estimate.** If a model returns something longer or larger
+than observed, the studio absorbs it. That is what the making charge is for, and it is why
+the multiplier is 3x rather than something tighter.
 
-**Ceilings.** Ten custom fees per token, but the binding limit is **twenty balance adjustments per
-`CryptoTransfer`**. Count adjustments, not fees. Refract to a handful of payees, not a long tail.
-
-**A fee-schedule update races in-flight payments.** A buyer's signed body stays valid so nothing
-fails, but a payment settling after an update is assessed under the new schedule, not the one its
-402 advertised. This is why the audit compares against the schedule at the transaction's
-consensus timestamp.
-
-**Shares are audited against the schedule at consensus time**, which the mirror node supports via
-`?timestamp=`. Governance of that schedule is a 2-of-3 threshold key across the payees, which is
-real enforcement, but all three keys were generated by one operator on one machine, so the
-independence is structural rather than demonstrated.
-
-**The denomination is nominal.** PRSM is a token we mint, so "$0.02" is a chosen unit convention,
-not an exchange rate.
+**Consensus-assessed revenue splitting is documented but not shipped.** HTS custom fees can
+divide one payment among several payees inside the transfer, with no contract. It needs an
+HTS token, because a fee schedule is a field on a token record and HBAR has none. Lockstep
+settles in HBAR, so the split is not part of this system. The analysis, including the
+`FAIL_INVALID` finding, is kept in [HEDERA.md](./HEDERA.md) because the behaviour is real
+and undocumented elsewhere.
 
 ---
 

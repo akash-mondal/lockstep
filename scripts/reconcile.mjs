@@ -1,5 +1,5 @@
 /**
- * Reconcile every payment Prism has ever settled, from balances alone.
+ * Reconcile every payment Lockstep has ever settled, from balances alone.
  *
  * Individual transactions can be cherry-picked; cumulative balances cannot. Each
  * collector's holdings imply the total gross volume that produced them, and the two
@@ -14,13 +14,13 @@ import "dotenv/config";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
 const MIRROR = process.env.MIRROR_NODE_URL ?? "https://testnet.mirrornode.hedera.com";
-const TOKEN = state.prism.tokenId;
+const TOKEN = state.lockstep.tokenId;
 const DECIMALS = 6;
 
 const roles = [
-  { role: "service", id: state.prism.service.id, share: 0.75, via: "payTo" },
-  { role: "upstream", id: state.prism.upstream.id, share: 0.15, via: "assessed_custom_fee" },
-  { role: "referrer", id: state.prism.referrer.id, share: 0.1, via: "assessed_custom_fee" },
+  { role: "service", id: state.lockstep.service.id, share: 0.75, via: "payTo" },
+  { role: "upstream", id: state.lockstep.upstream.id, share: 0.15, via: "assessed_custom_fee" },
+  { role: "referrer", id: state.lockstep.referrer.id, share: 0.1, via: "assessed_custom_fee" },
 ];
 
 async function balance(accountId) {
@@ -34,7 +34,7 @@ const held = Object.fromEntries(
   await Promise.all(roles.map(async (r) => [r.role, await balance(r.id)])),
 );
 
-console.log(`\nPRISM — reconciliation from public balances\n${"=".repeat(64)}`);
+console.log(`\nLOCKSTEP — reconciliation from public balances\n${"=".repeat(64)}`);
 console.log(`  token ${TOKEN}\n`);
 for (const r of roles) {
   console.log(`  ${r.role.padEnd(9)} ${r.id.padEnd(13)} ${String((r.share * 100).toFixed(0) + "%").padStart(4)}   ${String(held[r.role]).padStart(9)}`);

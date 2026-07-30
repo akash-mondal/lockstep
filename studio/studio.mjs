@@ -1,5 +1,5 @@
 /**
- * Prism Studio: sells finished videos to agents.
+ * Lockstep Studio: sells finished videos to agents.
  *
  * Two phases, because `exact` needs a fixed price before the work and the cost
  * of a video is not knowable until it has been planned. So planning is its own
@@ -87,7 +87,7 @@ const routes = {
     }],
     description: "Plan a video from a brief and return a firm price for rendering it.",
     mimeType: "application/json",
-    serviceName: "Prism Studio",
+    serviceName: "Lockstep Studio",
     tags: ["hedera", "x402", "video", "agent-payments"],
   },
   "POST /v1/discuss": {
@@ -98,7 +98,7 @@ const routes = {
     }],
     description: "Revise a plan before buying it: direction, script, length, scene count.",
     mimeType: "application/json",
-    serviceName: "Prism Studio",
+    serviceName: "Lockstep Studio",
     tags: ["hedera", "x402", "video", "agent-payments"],
   },
   "POST /v1/render": {
@@ -109,7 +109,7 @@ const routes = {
     }],
     description: "Buy a planned video. Settles in native HBAR; the receipt shows every onward purchase.",
     mimeType: "application/json",
-    serviceName: "Prism Studio",
+    serviceName: "Lockstep Studio",
     tags: ["hedera", "x402", "video", "agent-payments"],
   },
 };
@@ -336,7 +336,7 @@ app.get("/health", (c) =>
 
 const discovery = {
   version: 1, x402Version: 2,
-  name: "Prism Studio",
+  name: "Lockstep Studio",
   description: "Finished videos for agents, priced per job and paid in HBAR, with a receipt for every input.",
   resources: [`${ORIGIN}/v1/quote`, `${ORIGIN}/v1/render`],
 };
@@ -344,7 +344,7 @@ app.get("/.well-known/x402", (c) => c.json(discovery));
 app.get("/.well-known/x402.json", (c) => c.json(discovery));
 
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
-  console.log(`Prism Studio on :${info.port}`);
+  console.log(`Lockstep Studio on :${info.port}`);
   console.log(`  sells    native HBAR -> payTo ${PAY_TO}`);
   console.log(`  paid     POST /v1/quote 0.05 ℏ   POST /v1/discuss 0.05 ℏ   POST /v1/render <quoted> ℏ`);
   console.log(`  free     GET /v1/job/:id  /v1/receipt/:id  /v1/download/:id  /health`);
