@@ -40,7 +40,27 @@ const SCHEMA = `{
  * slideshow, and prose where quoted copy belongs gets paraphrased by the builder
  * into something the buyer never approved.
  */
-export async function draftPlan({ sessionId, brief, style = null, maxScenes = 6 }) {
+export async function draftPlan({
+  sessionId, brief, style = null, maxScenes = 6, attachments = [], conversation = [], previous = null,
+}) {
+  // Files the requester attached. The agent reads them itself rather than being
+  // handed a summary, because a brief that arrives as a script or a brand sheet
+  // is the brief, and paraphrasing it loses exactly the detail it was sent for.
+  const attached = attachments.length
+    ? [``, `The requester attached these files. Read them before planning:`,
+       ...attachments.map((a) => `  ${a.rel}   ${a.note ?? ""}`)].join("\n")
+    : "";
+
+  // What has already been agreed, so a revision does not silently undo it.
+  const agreed = conversation.length
+    ? [``, `This plan is being revised. The conversation so far:`,
+       ...conversation.map((m) => `  ${m.from}: ${m.text}`),
+       previous ? `` : ``,
+       previous ? `Keep everything not under discussion exactly as it was:` : ``,
+       previous ? JSON.stringify({ title: previous.title, scenes: previous.scenes.map((x) => x.idea) }) : ``,
+      ].filter(Boolean).join("\n")
+    : "";
+
   const prompt = [
     `Plan a short narrated video.`,
     ``,
@@ -62,14 +82,16 @@ export async function draftPlan({ sessionId, brief, style = null, maxScenes = 6 
     `  - onScreen copy is quoted exactly or null. Unquoted copy gets paraphrased.`,
     ``,
     `Do not mention price, budget, accounts or payment. That is not your decision.`,
+    attached,
+    agreed,
   ].filter(Boolean).join("\n");
 
   const { json } = await agentJson({
     sessionId,
     prompt,
     schemaHint: SCHEMA,
-    allowedTools: [],   // planning is thinking, not tool use
-    maxTurns: 4,
+    allowedTools: attachments.length ? ["Read", "Glob"] : [],
+    maxTurns: attachments.length ? 12 : 4,
   });
   if (!json?.scenes?.length) return null;
 

@@ -232,6 +232,39 @@ export async function transcribe({ bytes, filename = "narration.wav" }) {
   };
 }
 
+/**
+ * Look at frames and say what is actually there.
+ *
+ * `check` proves an element sits inside its region and clears contrast; it
+ * cannot say a scene contradicts its narration, that a composition reads as
+ * unfinished, or that a frame is simply dull. That judgment needs eyes.
+ *
+ * The question is deliberately open. Asking "did this work?" invites a model to
+ * agree with you, which is worthless as review; asking what it sees produces a
+ * description that can be checked against what was intended.
+ */
+export async function describe({ frames, question }) {
+  const content = [
+    { type: "text", text: question },
+    ...frames.map((b64) => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } })),
+  ];
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: "POST",
+    headers: auth(),
+    body: JSON.stringify({
+      model: process.env.VISION_MODEL ?? IMAGE_MODEL,
+      messages: [{ role: "user", content }],
+    }),
+  });
+  const j = await res.json();
+  if (j.error) throw new Error(`vision: ${j.error.message ?? JSON.stringify(j.error)}`);
+  return {
+    text: j.choices?.[0]?.message?.content ?? "",
+    cost: Number(j.usage?.cost ?? 0),
+    model: process.env.VISION_MODEL ?? IMAGE_MODEL,
+  };
+}
+
 /** What a supplier call costs, for pricing a job before running it. */
 export const OBSERVED_COST = {
   image: 0.033, // per image, gemini-3.1-flash-lite-image, ~1120 image tokens

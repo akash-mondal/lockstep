@@ -18,7 +18,7 @@
  * value chain, so it settles in STUD, whose fee schedule pays that chain at
  * consensus.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import "dotenv/config";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
@@ -71,6 +71,17 @@ const routes = {
     serviceName: "Prism Studio",
     tags: ["hedera", "x402", "video", "agent-payments"],
   },
+  "POST /v1/discuss": {
+    accepts: [{
+      scheme: "exact", network: "hedera:testnet",
+      price: { asset: "0.0.0", amount: QUOTE_PRICE },
+      payTo: PAY_TO, maxTimeoutSeconds: 300,
+    }],
+    description: "Revise a plan before buying it: direction, script, length, scene count.",
+    mimeType: "application/json",
+    serviceName: "Prism Studio",
+    tags: ["hedera", "x402", "video", "agent-payments"],
+  },
   "POST /v1/render": {
     accepts: [{
       scheme: "exact", network: "hedera:testnet",
@@ -90,6 +101,39 @@ app.use(paymentMiddleware(routes, server));
 const body = async (c) => { try { return await c.req.json(); } catch { return null; } };
 
 /**
+ * Write what the requester attached into the session's own workspace.
+ *
+ * Names are treated as untrusted: a requester supplies them, and a supplied name
+ * that resolves outside the session is an attempt to write somewhere it was not
+ * invited. safePath refuses those rather than trusting intent.
+ */
+function saveAttachments(id, list) {
+  if (!Array.isArray(list) || !list.length) return [];
+  const out = [];
+  for (const a of list.slice(0, 12)) {
+    if (!a?.name || !a?.data) continue;
+    const clean = String(a.name).replace(/[^\w.\-]/g, "_").slice(0, 80);
+    const rel = `assets/${clean}`;
+    writeFileSync(sessions.safePath(id, rel), Buffer.from(a.data, "base64"));
+    out.push({ rel, name: clean, note: a.note ?? null });
+  }
+  sessions.update(id, (s) => { s.attachments = out; return s; });
+  return out;
+}
+
+/** Enough of the plan for a requester to judge it, without the internals. */
+const summarise = (p) => ({
+  title: p.title,
+  angle: p.angle,
+  look: p.look,
+  continuity: p.continuity,
+  spectacle: p.spectacle,
+  scenes: p.scenes.map((x) => ({ id: x.id, idea: x.idea, onScreen: x.onScreen })),
+  narration: p.narration,
+  music: p.music,
+});
+
+/**
  * Plan the video, then price it.
  *
  * The agent decides what the video should be; this decides what it costs. Those
@@ -106,7 +150,10 @@ app.post("/v1/quote", async (c) => {
   });
   try {
     sessions.setState(session.id, "planning");
-    const drafted = await draftPlan({ sessionId: session.id, brief: b.brief, style: b.style });
+    const attachments = saveAttachments(session.id, b.attachments);
+    const drafted = await draftPlan({
+      sessionId: session.id, brief: b.brief, style: b.style, attachments,
+    });
     if (!drafted) {
       sessions.setState(session.id, "failed", { error: "could not plan this brief" });
       return c.json({ error: "could not plan this brief", planId: session.id }, 502);
@@ -120,6 +167,7 @@ app.post("/v1/quote", async (c) => {
     return c.json({
       planId: session.id,
       title: drafted.title,
+      readAttachments: attachments.map((a) => a.rel),
       scenes: drafted.scenes.length,
       narrationLines: (drafted.narration ?? []).length,
       quote: {
@@ -133,12 +181,67 @@ app.post("/v1/quote", async (c) => {
           referrer: hbar(pricing.breakdown.referrer),
         },
       },
+      plan: summarise(drafted),
+      discuss: `POST ${ORIGIN}/v1/discuss?plan=${session.id}`,
       buy: `POST ${ORIGIN}/v1/render?plan=${session.id}`,
-      note: "A plan is sellable once. Re-quote to buy again.",
+      note: "Discuss it as many times as you like; the price follows the plan. " +
+            "A plan is sellable once.",
     });
   } catch (err) {
     sessions.setState(session.id, "failed", { error: String(err.message ?? err) });
     return c.json({ error: String(err.message ?? err), planId: session.id }, 502);
+  }
+});
+
+/**
+ * Argue with the plan before paying for it.
+ *
+ * A brief rarely survives first contact: the requester wants it shorter, or a
+ * different angle, or scene three replaced. Each revision re-plans and re-prices,
+ * so the quote always matches the thing being bought rather than the thing
+ * originally asked for. Priced like a quote because each turn is real agent work.
+ */
+app.post("/v1/discuss", async (c) => {
+  const id = c.req.query("plan");
+  const s = id ? sessions.read(id) : null;
+  if (!s?.plan) return c.json({ error: "unknown plan" }, 404);
+  if (s.state !== "quoted") {
+    return c.json({ error: `plan is ${s.state} and can no longer be revised` }, 409);
+  }
+  const b = await body(c);
+  if (!b?.message) return c.json({ error: "message is required" }, 400);
+
+  const conversation = [...(s.conversation ?? []), { from: "requester", text: b.message }];
+  try {
+    const revised = await draftPlan({
+      sessionId: id,
+      brief: s.task.brief,
+      style: s.task.style,
+      attachments: s.attachments ?? [],
+      conversation,
+      previous: s.plan,
+      maxScenes: Number(b.maxScenes ?? 6),
+    });
+    if (!revised) return c.json({ error: "could not revise the plan" }, 502);
+
+    const pricing = priceJob(revised);
+    sessions.update(id, (t) => {
+      t.plan = { ...revised, pricing, budgetTinybar: budgetFor(pricing) };
+      t.conversation = [...conversation, {
+        from: "studio",
+        text: `Revised: ${revised.scenes.length} scenes, ${hbar(pricing.quoteTinybar)} STUD.`,
+      }];
+      return t;
+    });
+    return c.json({
+      planId: id,
+      revised: true,
+      plan: summarise(revised),
+      quote: { tinybar: pricing.quoteTinybar, stud: hbar(pricing.quoteTinybar), asset: STUD },
+      buy: `POST ${ORIGIN}/v1/render?plan=${id}`,
+    });
+  } catch (err) {
+    return c.json({ error: String(err.message ?? err) }, 502);
   }
 });
 

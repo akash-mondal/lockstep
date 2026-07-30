@@ -23,7 +23,7 @@ import { serve } from "@hono/node-server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
-import { image, narrate, music, transcribe } from "../studio/suppliers.mjs";
+import { image, narrate, music, transcribe, describe } from "../studio/suppliers.mjs";
 
 const PORT = Number(process.env.FOUNDRY_PORT ?? 4061);
 const PAY_TO = process.env.FOUNDRY_OPERATOR_ID;
@@ -48,6 +48,7 @@ const PRICE = {
   speech: "5000000",   //  0.05 ℏ
   music: "50000000",   //  0.50 ℏ, covering the 2x duration variance
   transcribe: "10000000", // 0.10 ℏ
+  vision: "8000000",      // 0.08 ℏ
 };
 
 const facilitator = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
@@ -81,6 +82,9 @@ const routes = {
   "POST /v1/transcribe": paid(PRICE.transcribe,
     "Transcribe audio to word-level timestamps, ready for caption timing.",
     ["hedera", "x402", "transcription", "captions", "agent-payments"]),
+  "POST /v1/vision": paid(PRICE.vision,
+    "Describe what is in a set of frames, for reviewing rendered work.",
+    ["hedera", "x402", "vision", "quality-assurance", "agent-payments"]),
 };
 
 const app = new Hono();
@@ -174,6 +178,23 @@ app.post("/v1/transcribe", async (c) => {
   }
 });
 
+/** Review: the agent paying to look at its own output. */
+app.post("/v1/vision", async (c) => {
+  const b = await body(c);
+  if (!Array.isArray(b?.frames) || !b.frames.length) {
+    return c.json({ error: "frames is required, an array of base64 JPEGs" }, 400);
+  }
+  try {
+    const r = await describe({
+      frames: b.frames.slice(0, 8),
+      question: b.question ?? "Describe what you see in these frames.",
+    });
+    return c.json({ text: r.text, upstreamCostUsd: r.cost, model: r.model });
+  } catch (err) {
+    return c.json({ error: String(err.message ?? err) }, 502);
+  }
+});
+
 // ------------------------------------------------------------------ free
 app.get("/health", (c) => c.json({ ok: true, payTo: PAY_TO, facilitator: FACILITATOR_URL }));
 
@@ -188,6 +209,7 @@ app.get("/v1/catalogue", (c) =>
       { route: "POST /v1/speech", tinybar: PRICE.speech, hbar: 0.05, body: { text: "string", voice: "string?" } },
       { route: "POST /v1/music", tinybar: PRICE.music, hbar: 0.5, body: { prompt: "string" } },
       { route: "POST /v1/transcribe", tinybar: PRICE.transcribe, hbar: 0.1, body: { data: "base64 audio", filename: "string?" } },
+      { route: "POST /v1/vision", tinybar: PRICE.vision, hbar: 0.08, body: { frames: ["base64 jpeg"], question: "string?" } },
     ],
   }));
 
@@ -206,6 +228,6 @@ serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
   console.log(`Prism Foundry on :${info.port}`);
   console.log(`  payTo       ${PAY_TO}   asset 0.0.0 (HBAR)`);
   console.log(`  facilitator ${FACILITATOR_URL}`);
-  console.log(`  paid        /v1/image 0.25 ℏ  /v1/speech 0.05 ℏ  /v1/music 0.50 ℏ  /v1/transcribe 0.10 ℏ`);
+  console.log(`  paid        /v1/image 0.25 ℏ  /v1/speech 0.05 ℏ  /v1/music 0.50 ℏ  /v1/transcribe 0.10 ℏ  /v1/vision 0.08 ℏ`);
   console.log(`  free        GET /v1/catalogue  /health  /.well-known/x402`);
 });
