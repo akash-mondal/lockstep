@@ -65,15 +65,18 @@ export function priceJob(plan) {
   const quote = quoted > FLOOR ? quoted : FLOOR;
 
   const upstream = (quote * 35n) / 100n;
+  const quoteUnits = quote / 100n; // STUD has 6 decimals; cost is in tinybar
   return {
     items: items.map((i) => ({ ...i, each: String(i.each), subtotal: String(i.each * BigInt(i.count)) })),
     costTinybar: String(cost),
     quoteTinybar: String(quote),
+    // What the buyer is actually charged, in the token's own units.
+    quoteUnits: String(quoteUnits),
     // Stated so a buyer can see the margin rather than infer it.
     breakdown: {
-      studio: String((quote * 50n) / 100n),
-      upstream: String(upstream),
-      referrer: String((quote * 15n) / 100n),
+      studio: String((quoteUnits * 50n) / 100n),
+      upstream: String((quoteUnits * 35n) / 100n),
+      referrer: String((quoteUnits * 15n) / 100n),
     },
     // The number that matters operationally: can the share cover the bill.
     upstreamCoversCost: upstream >= cost,
@@ -90,3 +93,13 @@ export function budgetFor(quotePlan) {
 }
 
 export const hbar = (tinybar) => Number(BigInt(tinybar)) / 1e8;
+
+/**
+ * Costs are reckoned in tinybar because that is what the foundry charges in.
+ * STUD carries six decimals, not eight, so a quote crossing from one to the
+ * other is divided by 100. Skipping that step prices a 6.66 video at 666 and
+ * the only symptom is a payment nobody can afford.
+ */
+export const TINYBAR_PER_STUD_UNIT = 100n;
+export const toStudUnits = (tinybar) => String(BigInt(tinybar) / TINYBAR_PER_STUD_UNIT);
+export const stud = (units) => Number(BigInt(units)) / 1e6;

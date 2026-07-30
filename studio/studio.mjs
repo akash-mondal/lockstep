@@ -26,7 +26,7 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import * as sessions from "./sessions.mjs";
-import { priceJob, budgetFor, hbar } from "./pricing.mjs";
+import { priceJob, budgetFor, hbar, stud } from "./pricing.mjs";
 import { draftPlan } from "./plan.mjs";
 import { runJob } from "./worker.mjs";
 import { buildReceipt } from "./receipt.mjs";
@@ -75,7 +75,7 @@ const renderPrice = (ctx) => {
   const id = planIdFrom(ctx);
   const s = id ? sessions.read(id) : null;
   if (!s?.plan || s.state !== "quoted") return { asset: STUD, amount: UNSELLABLE };
-  return { asset: STUD, amount: s.plan.pricing.quoteTinybar };
+  return { asset: STUD, amount: s.plan.pricing.quoteUnits };
 };
 
 const routes = {
@@ -190,14 +190,14 @@ app.post("/v1/quote", async (c) => {
       scenes: drafted.scenes.length,
       narrationLines: (drafted.narration ?? []).length,
       quote: {
-        tinybar: pricing.quoteTinybar,
-        stud: hbar(pricing.quoteTinybar),
+        units: pricing.quoteUnits,
+        stud: stud(pricing.quoteUnits),
         asset: STUD,
         // The buyer sees where its money goes before it spends any.
         splitsTo: {
-          studio: hbar(pricing.breakdown.studio),
-          upstream: hbar(pricing.breakdown.upstream),
-          referrer: hbar(pricing.breakdown.referrer),
+          studio: stud(pricing.breakdown.studio),
+          upstream: stud(pricing.breakdown.upstream),
+          referrer: stud(pricing.breakdown.referrer),
         },
       },
       plan: summarise(drafted),
@@ -248,7 +248,7 @@ app.post("/v1/discuss", async (c) => {
       t.plan = { ...revised, pricing, budgetTinybar: budgetFor(pricing) };
       t.conversation = [...conversation, {
         from: "studio",
-        text: `Revised: ${revised.scenes.length} scenes, ${hbar(pricing.quoteTinybar)} STUD.`,
+        text: `Revised: ${revised.scenes.length} scenes, ${stud(pricing.quoteUnits)} STUD.`,
       }];
       return t;
     });
@@ -256,7 +256,7 @@ app.post("/v1/discuss", async (c) => {
       planId: id,
       revised: true,
       plan: summarise(revised),
-      quote: { tinybar: pricing.quoteTinybar, stud: hbar(pricing.quoteTinybar), asset: STUD },
+      quote: { units: pricing.quoteUnits, stud: stud(pricing.quoteUnits), asset: STUD },
       buy: `POST ${ORIGIN}/v1/render?plan=${id}`,
     });
   } catch (err) {
