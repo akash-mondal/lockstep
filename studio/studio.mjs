@@ -52,8 +52,22 @@ server.register("hedera:*", new ExactHederaScheme());
  * refusal.
  */
 const UNSELLABLE = "999999999999";
+
+/**
+ * The price callback receives {adapter, path, method, paymentHeader, routePattern},
+ * established by logging it rather than assuming: the first guess reached for a
+ * Hono context that is not there, and the silent result was every render quoting
+ * the refusal price.
+ */
+const planIdFrom = (ctx) => {
+  const raw = ctx?.path ?? ctx?.adapter?.getPath?.() ?? "";
+  const q = String(raw).indexOf("?");
+  if (q === -1) return null;
+  return new URLSearchParams(String(raw).slice(q + 1)).get("plan");
+};
+
 const renderPrice = (ctx) => {
-  const id = ctx?.req?.query?.("plan") ?? ctx?.query?.plan ?? null;
+  const id = planIdFrom(ctx);
   const s = id ? sessions.read(id) : null;
   if (!s?.plan || s.state !== "quoted") return { asset: STUD, amount: UNSELLABLE };
   return { asset: STUD, amount: s.plan.pricing.quoteTinybar };
