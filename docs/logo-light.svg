@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="180" viewBox="0 0 820 180"
+     role="img" aria-label="Prism — one payment, every payee">
+  <title>Prism</title>
+  <desc>One incoming beam divides into three. The outgoing widths are the revenue
+        shares: 75 percent, 15 percent, 10 percent of the beam that entered.</desc>
+
+  <style>
+    /* Type and the incoming beam flip with the reader's theme. The refracted
+       beams are picked to hold their hue on white and on near-black alike. */
+    .wordmark { fill: #0f1216; }
+    .tag      { fill: #737d8a; }
+    .beam-in  { stroke: #333a44; }
+    .edge     { stroke: #333a44; }
+    .dot      { fill: #0f1216; }
+  </style>
+
+  <defs>
+    <!-- The payment arrives out of nothing at full width. Faded with a mask, not
+         a gradient stroke: a gradient would need its own colour and so could not
+         follow the theme, which is how the beam came to vanish on dark. -->
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="#000"/>
+      <stop offset=".42" stop-color="#fff"/>
+    </linearGradient>
+    <mask id="fadein" maskUnits="userSpaceOnUse" x="0" y="60" width="200" height="54">
+      <rect x="0" y="60" width="200" height="54" fill="url(#fade)"/>
+    </mask>
+
+    <!-- glass, brightest along the face the beam enters -->
+    <linearGradient id="pane" x1=".1" y1="0" x2=".9" y2="1">
+      <stop offset="0"   stop-color="#9aa4b2" stop-opacity=".30"/>
+      <stop offset=".6"  stop-color="#9aa4b2" stop-opacity=".09"/>
+      <stop offset="1"   stop-color="#9aa4b2" stop-opacity=".18"/>
+    </linearGradient>
+
+    <!-- each share takes its colour on the way out, never before -->
+    <linearGradient id="s75" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f2b95f" stop-opacity=".2"/>
+      <stop offset=".14" stop-color="#e9a63f"/><stop offset="1" stop-color="#e9a63f"/>
+    </linearGradient>
+    <linearGradient id="s15" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4fd0b4" stop-opacity=".2"/>
+      <stop offset=".14" stop-color="#25b394"/><stop offset="1" stop-color="#25b394"/>
+    </linearGradient>
+    <linearGradient id="s10" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a48cff" stop-opacity=".2"/>
+      <stop offset=".14" stop-color="#8b6efb"/><stop offset="1" stop-color="#8b6efb"/>
+    </linearGradient>
+
+    <!-- the slivers are a tenth of a payment and drawn as one, so they get more
+         bloom than the dominant share to stay legible without being widened -->
+    <filter id="soft" x="-50%" y="-300%" width="200%" height="700%">
+      <feGaussianBlur stdDeviation="2.6"/>
+    </filter>
+    <filter id="softer" x="-50%" y="-500%" width="200%" height="1100%">
+      <feGaussianBlur stdDeviation="3.4"/>
+    </filter>
+    <filter id="spark" x="-300%" y="-300%" width="700%" height="700%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+  </defs>
+
+  <!-- ── mark ──────────────────────────────────────────────────────────────
+       12 units in. Out: 12×0.75 = 9, 12×0.15 = 1.8, 12×0.10 = 1.2. The mark is
+       the arithmetic, drawn to scale. -->
+
+  <line class="beam-in" x1="24" y1="86" x2="176" y2="86" stroke-width="12"
+        mask="url(#fadein)" opacity=".95"/>
+
+  <!-- a slender shard rather than a symmetric triangle: this is an optical
+       element, not a poster -->
+  <g>
+    <path d="M218 26 L206 142 L158 116 Z" fill="url(#pane)"/>
+    <path d="M218 26 L206 142 L158 116 Z" class="edge" fill="none"
+          stroke-width="2.2" stroke-linejoin="round" opacity=".5"/>
+    <!-- entry facet, catching the light -->
+    <path d="M218 26 L158 116" class="edge" fill="none" stroke-width="3.2"
+          stroke-linecap="round" opacity=".9"/>
+  </g>
+
+  <!-- assessed here, inside the same transaction -->
+  <circle cx="186" cy="83" r="8" fill="#fff" opacity=".45" filter="url(#spark)"/>
+  <circle cx="186" cy="83" r="2.4" class="dot"/>
+
+  <g fill="none" stroke-linecap="round">
+    <path d="M206 92 L470 56"   stroke="url(#s75)" stroke-width="9"   filter="url(#soft)"   opacity=".45"/>
+    <path d="M204 100 L470 104" stroke="url(#s15)" stroke-width="1.8" filter="url(#softer)" opacity=".8"/>
+    <path d="M203 108 L470 140" stroke="url(#s10)" stroke-width="1.2" filter="url(#softer)" opacity=".8"/>
+    <path d="M206 92 L470 56"   stroke="url(#s75)" stroke-width="9"/>
+    <path d="M204 100 L470 104" stroke="url(#s15)" stroke-width="1.8"/>
+    <path d="M203 108 L470 140" stroke="url(#s10)" stroke-width="1.2"/>
+  </g>
+
+  <!-- ── wordmark ─────────────────────────────────────────────────────────── -->
+  <g transform="translate(506 0)">
+    <text class="wordmark" x="0" y="96"
+          font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif"
+          font-size="64" font-weight="650" letter-spacing="-1.8">Prism</text>
+    <text class="tag" x="3" y="124"
+          font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          font-size="13" letter-spacing=".6">75 / 15 / 10 at consensus</text>
+  </g>
+</svg>
