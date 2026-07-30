@@ -54,16 +54,21 @@ server.register("hedera:*", new ExactHederaScheme());
 const UNSELLABLE = "999999999999";
 
 /**
- * The price callback receives {adapter, path, method, paymentHeader, routePattern},
- * established by logging it rather than assuming: the first guess reached for a
- * Hono context that is not there, and the silent result was every render quoting
- * the refusal price.
+ * The price callback receives {adapter, path, method, paymentHeader, routePattern}.
+ * `path` is the matched route with the query stripped, so the plan id only
+ * survives on the adapter. Both facts came from logging the context rather than
+ * reasoning about it, after two wrong guesses each failed the same silent way:
+ * an unreadable id falls through to the refusal price, which looks exactly like
+ * a working refusal.
  */
 const planIdFrom = (ctx) => {
-  const raw = ctx?.path ?? ctx?.adapter?.getPath?.() ?? "";
-  const q = String(raw).indexOf("?");
-  if (q === -1) return null;
-  return new URLSearchParams(String(raw).slice(q + 1)).get("plan");
+  // `path` is the matched route without its query, so the adapter is the only
+  // place the parameter survives.
+  const viaAdapter = ctx?.adapter?.getQueryParam?.("plan");
+  if (viaAdapter) return viaAdapter;
+  const url = ctx?.adapter?.getUrl?.() ?? "";
+  const q = String(url).indexOf("?");
+  return q === -1 ? null : new URLSearchParams(String(url).slice(q + 1)).get("plan");
 };
 
 const renderPrice = (ctx) => {
