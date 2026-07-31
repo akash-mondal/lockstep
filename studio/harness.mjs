@@ -32,6 +32,12 @@ export async function agentTurn({
   allowedTools = ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
   maxTurns = 40,
   timeoutMs = 900_000,
+  // Pinned rather than inherited. Nothing passed a model before, so the studio
+  // ran on whatever the invoking account's default happened to be: it was Opus
+  // 5, and it would have moved without warning and without any change here.
+  // What the composition looks like depends on this more than on any other
+  // single setting.
+  model = process.env.STUDIO_MODEL ?? "claude-opus-5",
   onText = null,
   onTool = null,
   // What a tool actually returned. A watcher seeing "Bash: hyperframes check"
@@ -61,7 +67,7 @@ export async function agentTurn({
   try {
     for await (const msg of query({
       prompt,
-      options: { cwd, permissionMode: "bypassPermissions", allowedTools, maxTurns,
+      options: { cwd, model, permissionMode: "bypassPermissions", allowedTools, maxTurns,
                  abortController },
     })) {
       if (msg.type === "assistant") {
