@@ -1,0 +1,128 @@
+/**
+ * The stage and a starting vocabulary. Not a house style, and not a cage.
+ *
+ * Everything here was rebuilt from scratch on every run: the reset, the stage
+ * box, a type scale, the classes for rules and plates and meters, the caption
+ * band. None of it is a judgement call, all of it is identical whatever the
+ * video is about, and writing it again each time was costing most of a turn.
+ *
+ * What is deliberately NOT here is a look. The colours below are neutral
+ * defaults that the job overwrites, the type scale is a starting ratio, and
+ * every class is a plain utility rather than a style. A brief for a children's
+ * app and a brief for a trading desk should end up looking nothing alike, and
+ * nothing in this file should make them converge.
+ *
+ * Delete, rename or replace anything in here that does not serve the brief.
+ * It is a floor, not a ceiling.
+ */
+
+:root {
+  /* Overwritten per job from the plan's stated look. These values exist so the
+     file is valid on its own, not because they are the right palette. */
+  --ground: #0b0b0c;
+  --ink: #f4f5f7;
+  --dim: #6b7480;
+  --accent: #8a8f98;
+  --surface: rgba(255, 255, 255, 0.04);
+
+  /* A ratio to start from. Change the numbers, keep the idea that the steps are
+     far enough apart to read as a hierarchy. */
+  --t-display: 68px;
+  --t-lead: 34px;
+  --t-body: 21px;
+  --t-util: 12px;
+
+  --gutter: 64px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 1280px;
+  height: 720px;
+  overflow: hidden;
+  background: var(--ground);
+  color: var(--ink);
+  /* Replaced per job. Only fonts installed on this machine will render; see the
+     measured list in DIRECTION.md. */
+  font-family: "Liberation Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage { position: relative; width: 1280px; height: 720px; overflow: hidden; }
+
+/* Everything on the stage is positioned; saying so once removes a line from
+   every element written later. */
+.abs { position: absolute; }
+
+/* ---------------------------------------------------------------- type */
+
+.display {
+  font-size: var(--t-display);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.lead { font-size: var(--t-lead); font-weight: 600; line-height: 1.15; }
+.body { font-size: var(--t-body); font-weight: 400; line-height: 1.45; }
+
+/* Small, wide, uppercase: labels, units, counters, anything instrumental. */
+.util {
+  font-size: var(--t-util);
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* Digits that do not reflow while counting. Without this a rolling number
+   visibly jitters on every frame. */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* --------------------------------------------------------------- plates */
+
+/* An image placed as an element, with ground visible around it. Full bleed is a
+   deliberate choice and uses .plate-bleed instead of being the default. */
+.plate { overflow: hidden; }
+.plate img, .plate video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.plate-bleed { position: absolute; inset: 0; overflow: hidden; }
+
+/* ----------------------------------------------------------- primitives */
+
+.rule { background: var(--dim); height: 1px; transform-origin: left center; }
+.vrule { background: var(--dim); width: 1px; transform-origin: center top; }
+.box { border: 1px solid var(--dim); background: var(--surface); }
+.dot { border-radius: 50%; background: var(--accent); }
+
+/* A bar that fills along one axis. scaleX composites; width does not. */
+.meter { background: var(--surface); overflow: hidden; }
+.meter-fill {
+  background: var(--accent); height: 100%; width: 100%;
+  transform-origin: left center; transform: scaleX(0);
+}
+
+/* SVG connectors for anything with parts that relate. */
+.link { stroke: var(--dim); stroke-width: 2; fill: none; }
+
+/* ------------------------------------------------------------- captions */
+
+/* Generated from the bought word timings. Lower third with real margin so it
+   never touches the frame edge, and a shadow so it survives a bright plate. */
+#captions {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: 76px;
+  min-height: 62px;
+}
+#captions .cue {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+}
+#captions .cue .w { display: inline-block; opacity: 0; will-change: transform, opacity; }

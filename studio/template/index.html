@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <title>composition</title>
+
+    <!-- Local, not a CDN. There is no network during rendering, so a script tag
+         pointing at one resolves to nothing and every timeline silently fails. -->
+    <script src="gsap.min.js"></script>
+
+    <link rel="stylesheet" href="stage.css" />
+    <link rel="stylesheet" href="brand.css" />
+  </head>
+
+  <body>
+    <!--
+      The stage. data-duration on the root is the length of the piece, timed to
+      the narration file, and it is what the renderer uses to decide how many
+      frames to seek.
+
+      Everything below is a starting point that belongs to this job. Move it,
+      restyle it, delete what the brief does not need. The only parts that are
+      load-bearing are: the scene elements keep their ids and their data-start
+      and data-duration, and LS.start() runs last.
+    -->
+    <div id="stage" class="clip" data-start="0" data-duration="__TOTAL__">
+
+      <!-- Behind everything. A ground, a gradient, a plate, or nothing. -->
+      <div id="bg" class="abs" style="inset: 0"></div>
+
+      <!-- One element per scene, already timed from what is spoken in it.
+           Each is filled in by its own builder in build/. -->
+__SCENES__
+
+      <!-- Anything that must survive the cuts: a continuity device, a frame, a
+           persistent rail. Empty by default because not every piece wants one. -->
+      <div id="persistent" class="abs" style="inset: 0; pointer-events: none"></div>
+
+      <!-- Generated from the bought word timings. Restyle freely. -->
+      <div id="captions"></div>
+
+      <!-- Muted video is a renderer requirement; audio rides these elements. -->
+__AUDIO__
+    </div>
+
+    <!-- Order matters only in that runtime.js defines LS before the builders
+         register with it, and start() runs after they all have. The builders
+         themselves are order-independent. -->
+    <script src="runtime.js"></script>
+    <script src="blocks.js"></script>
+    <script src="captions.js"></script>
+__BUILDERS__
+    <script>
+      LS.start();
+    </script>
+  </body>
+</html>
