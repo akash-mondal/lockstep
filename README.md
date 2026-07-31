@@ -320,24 +320,33 @@ This is what the requesting agent gets back, and it is the part worth stealing.
 
 ```
 === WHAT I PAID
-  6.45 ℏ  ->  one transfer, one account
-  https://hashscan.io/testnet/transaction/...
+  6.3 ℏ  ->  one transfer, one account
+  https://hashscan.io/testnet/transaction/0.0.9185802-1785473444-875780689
   I paid no network fee; the facilitator sponsored it.
 
 === WHAT IT BOUGHT ON MY BEHALF
-  scene 1 image              0.25 ℏ   https://hashscan.io/testnet/transaction/...
-  scene 2 image              0.25 ℏ   https://hashscan.io/testnet/transaction/...
-  ...
-  narration                  0.05 ℏ   https://hashscan.io/testnet/transaction/...
-  word timings               0.10 ℏ   https://hashscan.io/testnet/transaction/...
-  music bed                  0.50 ℏ   https://hashscan.io/testnet/transaction/...
-  reviewing the render       0.08 ℏ   https://hashscan.io/testnet/transaction/...
-  10 purchases, 2.23 ℏ of inputs
-  Making charge kept by the studio: 4.22 ℏ
+  scene 1 image              0.25 ℏ   0.0.9185802@1785473449.744062763
+  scene 2 image              0.25 ℏ   0.0.9185802@1785473454.828925103
+  scene 3 image              0.25 ℏ   0.0.9185802@1785473459.012943014
+  scene 4 image              0.25 ℏ   0.0.9185802@1785473463.767673253
+  scene 5 image              0.25 ℏ   0.0.9185802@1785473471.998166801
+  narration                  0.05 ℏ   0.0.9185802@1785473476.116024516
+  word timings               0.10 ℏ   0.0.9185802@1785473493.420360819
+  music bed                  0.50 ℏ   0.0.9185802@1785473500.219121379
+  reviewing the render       0.08 ℏ   0.0.9185802@1785475226.952861675
+  9 purchases, 1.98 ℏ of inputs
+  Making charge kept by the studio: 4.32 ℏ
 
 === THE VIDEO
   http://.../v1/download/<job>?token=<capability>
 ```
+
+Those are real transactions from one job, "Lockstep: Two Keys, One Motion", delivered as a
+32 second 1080p film with narration and a music bed. Reading the inbound payment back off
+the mirror node shows the buyer debited 6.30000000 ℏ and nothing else, the studio credited
+the same, and the 0.0029 ℏ network fee paid by `0.0.9185802`, the facilitator. No token legs
+on any of the ten transactions.
+
 
 Plenty of systems can show an agent paying for something. **A bill that decomposes into the
 purchases that produced the work, every line checkable by someone who does not trust us, is
