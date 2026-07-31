@@ -31,13 +31,14 @@ const client = Client.forTestnet().setOperator(
   PrivateKey.fromStringECDSA(process.env.OPERATOR_KEY),
 );
 
-const TOKEN = state.lockstep.tokenId;
+const HBAR = "0.0.0";
 const AGENT = state.agent.id;
 const SERVICE = state.lockstep.service.id;
 const OUTSIDER = state.seller.id; // a real account that is not allowlisted
 const FEE_PAYER = "0.0.9185802";
 
-const honestChallenge = { asset: TOKEN, payTo: SERVICE, amount: "20000" };
+// Tinybar, under the co-signer's 1_000_000 per-call ceiling.
+const honestChallenge = { asset: HBAR, payTo: SERVICE, amount: "300000" };
 
 /** Freeze and serialize a transfer without signing — policy sees bytes only. */
 function build(fn) {
@@ -47,21 +48,23 @@ function build(fn) {
   tx.freezeWith(client);
   return Buffer.from(tx.toBytes()).toString("base64");
 }
-const token = TokenId.fromString(TOKEN);
+const HBAR_ASSET = HBAR;
 const acct = (id) => AccountId.fromString(id);
+/** Shorthand: an HBAR leg in tinybar. */
+const tb = (n) => Hbar.fromTinybars(n);
 
 const cases = [
   {
     name: "honest payment (must be approved)",
     expectApproved: true,
     challenge: honestChallenge,
-    tx: build((t) => t.addTokenTransfer(token, acct(AGENT), -20000).addTokenTransfer(token, acct(SERVICE), 20000)),
+    tx: build((t) => t.addHbarTransfer(acct(AGENT), tb(-300000)).addHbarTransfer(acct(SERVICE), tb(300000))),
   },
   {
     name: "redirect: challenge names the service, transaction pays an outsider",
     expectApproved: false,
     challenge: honestChallenge,
-    tx: build((t) => t.addTokenTransfer(token, acct(AGENT), -20000).addTokenTransfer(token, acct(OUTSIDER), 20000)),
+    tx: build((t) => t.addHbarTransfer(acct(AGENT), tb(-300000)).addHbarTransfer(acct(OUTSIDER), tb(300000))),
   },
   {
     name: "skim: pays the service but siphons half to an outsider",
@@ -69,51 +72,53 @@ const cases = [
     challenge: honestChallenge,
     tx: build((t) =>
       t
-        .addTokenTransfer(token, acct(AGENT), -20000)
-        .addTokenTransfer(token, acct(SERVICE), 10000)
-        .addTokenTransfer(token, acct(OUTSIDER), 10000),
+        .addHbarTransfer(acct(AGENT), tb(-300000))
+        .addHbarTransfer(acct(SERVICE), tb(150000))
+        .addHbarTransfer(acct(OUTSIDER), tb(150000)),
     ),
   },
   {
     name: "overspend: debits more than the challenge quoted",
     expectApproved: false,
     challenge: honestChallenge,
-    tx: build((t) => t.addTokenTransfer(token, acct(AGENT), -40000).addTokenTransfer(token, acct(SERVICE), 40000)),
+    tx: build((t) => t.addHbarTransfer(acct(AGENT), tb(-600000)).addHbarTransfer(acct(SERVICE), tb(600000))),
   },
   {
     name: "cap breach: amount above the per-call ceiling",
     expectApproved: false,
-    challenge: { ...honestChallenge, amount: "999999" },
-    tx: build((t) => t.addTokenTransfer(token, acct(AGENT), -999999).addTokenTransfer(token, acct(SERVICE), 999999)),
+    challenge: { ...honestChallenge, amount: "9999999" },
+    tx: build((t) => t.addHbarTransfer(acct(AGENT), tb(-9999999)).addHbarTransfer(acct(SERVICE), tb(9999999))),
   },
   {
-    name: "smuggled HBAR alongside a token payment",
+    // The mirror image of the old token-era case: the declared asset is paid
+    // correctly and a different one leaves alongside it.
+    name: "smuggled token alongside an HBAR payment",
     expectApproved: false,
     challenge: honestChallenge,
     tx: build((t) =>
       t
-        .addTokenTransfer(token, acct(AGENT), -20000)
-        .addTokenTransfer(token, acct(SERVICE), 20000)
-        .addHbarTransfer(acct(AGENT), Hbar.fromTinybars(-100000))
-        .addHbarTransfer(acct(OUTSIDER), Hbar.fromTinybars(100000)),
+        .addHbarTransfer(acct(AGENT), tb(-300000))
+        .addHbarTransfer(acct(SERVICE), tb(300000))
+        .addTokenTransfer(TokenId.fromString("0.0.5555"), acct(AGENT), -1000)
+        .addTokenTransfer(TokenId.fromString("0.0.5555"), acct(OUTSIDER), 1000),
     ),
   },
   {
     name: "unallowlisted payee declared in the challenge",
     expectApproved: false,
     challenge: { ...honestChallenge, payTo: OUTSIDER },
-    tx: build((t) => t.addTokenTransfer(token, acct(AGENT), -20000).addTokenTransfer(token, acct(OUTSIDER), 20000)),
+    tx: build((t) => t.addHbarTransfer(acct(AGENT), tb(-300000)).addHbarTransfer(acct(OUTSIDER), tb(300000))),
   },
   {
-    // The fungible payment is flawless; an NFT rides along and leaves with it.
-    // Neither the amount checks nor the facilitator's inspector look at NFT maps.
+    // The payment is flawless; an NFT rides along and leaves with it. Neither the
+    // amount checks nor the facilitator's inspector look at NFT maps.
     name: "smuggle: correct payment carrying an NFT transfer out",
     expectApproved: false,
     challenge: honestChallenge,
     tx: build((t) =>
       t
-        .addTokenTransfer(token, acct(AGENT), -20000)
-        .addTokenTransfer(token, acct(SERVICE), 20000)
+        .addHbarTransfer(acct(AGENT), tb(-300000))
+        .addHbarTransfer(acct(SERVICE), tb(300000))
         .addNftTransfer(new NftId(TokenId.fromString("0.0.5555"), 1), acct(AGENT), acct(OUTSIDER)),
     ),
   },
@@ -121,11 +126,11 @@ const cases = [
     // Spending someone else's allowance rather than the agent's own balance.
     name: "allowance: approved HBAR transfer smuggled in",
     expectApproved: false,
-    challenge: { asset: "0.0.0", payTo: SERVICE, amount: "300000" },
+    challenge: honestChallenge,
     tx: build((t) =>
       t
-        .addApprovedHbarTransfer(acct(AGENT), Hbar.fromTinybars(-300000))
-        .addHbarTransfer(acct(SERVICE), Hbar.fromTinybars(300000)),
+        .addApprovedHbarTransfer(acct(AGENT), tb(-300000))
+        .addHbarTransfer(acct(SERVICE), tb(300000)),
     ),
   },
   {
@@ -135,11 +140,13 @@ const cases = [
     tx: Buffer.from("not a transaction").toString("base64"),
   },
   {
-    name: "wrong asset: challenge says PRSM, transaction moves HBAR",
+    name: "wrong asset: challenge says HBAR, transaction moves a token",
     expectApproved: false,
     challenge: honestChallenge,
     tx: build((t) =>
-      t.addHbarTransfer(acct(AGENT), Hbar.fromTinybars(-20000)).addHbarTransfer(acct(SERVICE), Hbar.fromTinybars(20000)),
+      t
+        .addTokenTransfer(TokenId.fromString("0.0.5555"), acct(AGENT), -300000)
+        .addTokenTransfer(TokenId.fromString("0.0.5555"), acct(SERVICE), 300000),
     ),
   },
 ];

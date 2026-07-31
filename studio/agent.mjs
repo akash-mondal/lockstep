@@ -6,11 +6,13 @@
  * co-signer holds the other. Neither can move funds alone, and that constraint is
  * enforced by the ledger rather than by this code.
  *
- * The agent holds zero HBAR throughout — the facilitator sponsors network fees.
+ * Everything settles in native HBAR. The agent pays no network fee: the
+ * facilitator is the transaction's fee payer, so the account needs only what it
+ * intends to spend.
  *
- *   node src/client.mjs                       pay the PRSM route (split on)
- *   node src/client.mjs --route risk          pay the HBAR control route (split off)
- *   node src/client.mjs --amount 500000000    ask a bigger question
+ *   npm run agent                       pay the cost route
+ *   npm run agent -- --route risk       pay the risk route
+ *   npm run agent -- --amount 500000000 ask a bigger question
  */
 import { readFileSync } from "node:fs";
 import "dotenv/config";
@@ -60,8 +62,8 @@ const flag = (name, fallback) => {
 const route = flag("route", "cost");
 const target =
   route === "risk"
-    ? `${ORIGIN}/v1/account/${flag("id", state.lockstep.service.id)}/risk?asset=${state.lockstep.tokenId}`
-    : `${ORIGIN}/v1/token/${flag("id", state.lockstep.tokenId)}/cost?amount=${flag("amount", "1000000")}`;
+    ? `${ORIGIN}/v1/account/${flag("id", state.lockstep.service.id)}/risk?asset=0.0.0`
+    : `${ORIGIN}/v1/token/${flag("id", process.env.USDC_TOKEN_ID ?? "0.0.429274")}/cost?amount=${flag("amount", "1000000")}`;
 
 const agentId = state.agent.id;
 const agentKey = PrivateKey.fromStringECDSA(state.agent.agentKey);
@@ -74,9 +76,9 @@ const decode = (b64) => JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
 const encode = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64");
 
 try {
-  // Report the real balance rather than asserting zero: on the PRSM route the
-  // agent genuinely needs no HBAR (the facilitator sponsors the network fee), but
-  // the HBAR control route has to fund the payment itself.
+  // Report the real balance rather than asserting a number. The agent pays no
+  // network fee, but it does fund the payment itself, so what it holds should be
+  // visible rather than claimed.
   const bal = await (await fetch(`${process.env.MIRROR_NODE_URL}/api/v1/accounts/${agentId}`)).json();
   const tinybars = Number(bal.balance?.balance ?? 0);
   console.log(`agent  ${agentId}  (ThresholdKey 2-of-2, holds ${tinybars / 1e8} HBAR)`);

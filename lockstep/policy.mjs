@@ -96,11 +96,13 @@ const policyKey = PrivateKey.fromStringECDSA(
 );
 
 export const POLICY = {
-  // Denominated in the smallest unit of each asset.
-  maxPerCall: { [state.lockstep.tokenId]: 50_000n, "0.0.0": 1_000_000n },
+  // Tinybar. HBAR is the only asset Lockstep settles in, so it is the only asset
+  // the co-signer will sign for: an allowlist that carries entries nobody uses is
+  // a standing permission waiting for something to exercise it.
+  maxPerCall: { "0.0.0": 1_000_000n },
   // Only these accounts may be paid, whatever a 402 claims.
   allowedPayees: new Set([state.lockstep.service.id]),
-  allowedAssets: new Set([state.lockstep.tokenId, "0.0.0"]),
+  allowedAssets: new Set(["0.0.0"]),
   maxCallsPerMinute: 30,
 };
 

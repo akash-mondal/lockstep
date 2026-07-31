@@ -20,7 +20,7 @@ done
 sleep 1
 
 nohup node lockstep/policy-server.mjs > .run/policy.log 2>&1 &
-nohup node studio/server.mjs     > .run/server.log 2>&1 &
+nohup node studio/server.mjs      > .run/server.log 2>nohup node studio/server.mjs     > .run/server.log 2>&1 &1 &
 sleep 4
 
 fail=0

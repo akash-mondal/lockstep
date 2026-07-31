@@ -1,16 +1,17 @@
 /**
  * Lockstep resource server.
  *
- * A metered API for agents, priced per call, where every payment refracts into
- * three payees at consensus. Runs on stock `@x402/hono` + `@x402/hedera` against
- * unmodified public facilitators — needing our own facilitator would prove nothing
- * about the standard.
+ * A metered API for agents, priced per call and settled in native HBAR. Runs on
+ * stock `@x402/hono` + `@x402/hedera` against unmodified public facilitators;
+ * needing our own facilitator would prove nothing about the standard.
  *
- * Two paid routes exist deliberately:
- *   /v1/token/:id/cost   settles in PRSM  → the split is on
- *   /v1/account/:id/risk settles in HBAR  → the split is off
- * Same server, same middleware, same facilitator. The only difference is the
- * asset, which is the cleanest way to show what the token's fee schedule adds.
+ * This is the primitive's own demand side. What it exists to exercise is the
+ * payer rather than the routes: the account paying for these calls is a
+ * threshold-2 KeyList, so every settlement here required both the agent's key
+ * and the co-signer's, and the agent could not have made one alone.
+ *
+ *   /v1/token/:id/cost    what an HTS transfer really costs the recipient
+ *   /v1/account/:id/risk  can this counterparty receive what you are about to send
  */
 import { readFileSync } from "node:fs";
 import "dotenv/config";
@@ -19,27 +20,20 @@ import { serve } from "@hono/node-server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
-import { lockstepExtension } from "../lockstep/extension.mjs";
-import { auditSettlement } from "../lockstep/audit.mjs";
 import { accountRisk, tokenCost } from "./intel.mjs";
-import { readSplit } from "../lockstep/mirror.mjs";
 
 const state = JSON.parse(readFileSync(new URL("../.state.json", import.meta.url), "utf8"));
-const TOKEN = state.lockstep.tokenId;
 const PAY_TO = state.lockstep.service.id;
-const DECIMALS = 6;
 const PORT = Number(process.env.PORT ?? 4051);
 const ORIGIN = process.env.PUBLIC_ORIGIN ?? `http://localhost:${PORT}`;
 const FACILITATOR_URL = process.env.FACILITATOR_URL ?? "https://x402.org/facilitator";
 
-// $0.02 — the median x402 price, so this reads as a real service rather than a toy.
-const PRICE_UNITS = String(0.02 * 10 ** DECIMALS);
-const HBAR_PRICE_TINYBAR = "300000"; // ~$0.002 of HBAR for the control route
-
-const LABELS = {
-  [state.lockstep.upstream.id]: "upstream-data",
-  [state.lockstep.referrer.id]: "referrer",
-};
+const HBAR = "0.0.0";
+// Both routes settle in native HBAR. There is no second asset: a payment asset
+// the system mints is a payment asset the system can change the rules of, and
+// the whole point of the co-signer is that the limit is not ours to move.
+const COST_PRICE_TINYBAR = "800000";  // ~$0.02 of HBAR
+const RISK_PRICE_TINYBAR = "300000";
 
 /**
  * The official `bazaar` extension is how discovery indexers learn what a route
@@ -77,7 +71,6 @@ const bazaar = ({ queryParams = {}, example, properties, required }) => ({
 const facilitator = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
 const server = new x402ResourceServer(facilitator);
 server.register("hedera:*", new ExactHederaScheme());
-server.registerExtension(lockstepExtension({ tokenId: TOKEN, labels: LABELS }));
 
 const routes = {
   "GET /v1/token/:id/cost": {
@@ -85,8 +78,7 @@ const routes = {
       {
         scheme: "exact",
         network: "hedera:testnet",
-        // AssetAmount price — settle in PRSM, whose fee schedule carries the split.
-        price: { asset: TOKEN, amount: PRICE_UNITS },
+        price: { asset: HBAR, amount: COST_PRICE_TINYBAR },
         payTo: PAY_TO,
         maxTimeoutSeconds: 180,
       },
@@ -96,7 +88,6 @@ const routes = {
     serviceName: "Lockstep",
     tags: ["hedera", "hts", "custom-fees", "agent-payments", "counterparty"],
     extensions: {
-      lockstep: {},
       bazaar: bazaar({
         queryParams: { amount: "20000" },
         properties: { amount: { type: "string", description: "Optional raw amount to quote fees against" } },
@@ -109,8 +100,7 @@ const routes = {
       {
         scheme: "exact",
         network: "hedera:testnet",
-        // Native HBAR — the control route. Same server, same facilitator, no split.
-        price: { asset: "0.0.0", amount: HBAR_PRICE_TINYBAR },
+        price: { asset: HBAR, amount: RISK_PRICE_TINYBAR },
         payTo: PAY_TO,
         maxTimeoutSeconds: 180,
       },
@@ -133,7 +123,7 @@ const app = new Hono();
 
 app.use("*", async (c, next) => {
   await next();
-  c.header("x-lockstep-asset", TOKEN);
+  c.header("x-lockstep-asset", HBAR);
 });
 
 app.use(paymentMiddleware(routes, server));
@@ -159,33 +149,7 @@ app.get("/v1/account/:id/risk", async (c) => {
   }
 });
 
-// --------------------------------------------------------------- free routes
-// Audit is deliberately free and keyless: charging for the ability to check us
-// would defeat the point.
-
-app.get("/v1/audit/:txId", async (c) => {
-  const result = await auditSettlement(c.req.param("txId"), { tokenId: TOKEN, payTo: PAY_TO, labels: LABELS });
-  return c.json(result, result.ok === false && result.reason === "not_indexed" ? 202 : 200);
-});
-
-app.get("/v1/split", async (c) => {
-  const split = await readSplit(TOKEN);
-  return c.json({
-    ...split,
-    payees: [
-      { role: "service", basisPoints: split.payToBasisPoints, account: PAY_TO, via: "payTo" },
-      ...split.shares.map((s) => ({
-        role: LABELS[s.collector] ?? "collector",
-        basisPoints: s.basisPoints,
-        account: s.collector,
-        via: "assessed_custom_fee",
-      })),
-    ],
-    note: "Read live from the token's fee schedule on the public mirror node, not from server config.",
-  });
-});
-
-app.get("/health", (c) => c.json({ ok: true, asset: TOKEN, facilitator: FACILITATOR_URL }));
+app.get("/health", (c) => c.json({ ok: true, asset: HBAR, facilitator: FACILITATOR_URL }));
 
 // --------------------------------------------------------------- discovery
 // Both spellings are served on purpose: x402scan's registerFromOrigin fetches
@@ -195,7 +159,7 @@ const discovery = {
   version: 1,
   x402Version: 2,
   name: "Lockstep",
-  description: "Counterparty intelligence for paying agents. Every payment refracts to its supply chain at consensus.",
+  description: "Counterparty intelligence for paying agents, priced per call and settled in native HBAR.",
   resources: [`${ORIGIN}/v1/token/{id}/cost`, `${ORIGIN}/v1/account/{id}/risk`],
 };
 app.get("/.well-known/x402", (c) => c.json(discovery));
@@ -217,8 +181,8 @@ app.get("/openapi.json", (c) =>
           "x-payment-info": {
             protocols: ["x402"],
             network: "hedera:testnet",
-            asset: TOKEN,
-            price: { mode: "fixed", currency: "USD", amount: "0.02" },
+            asset: HBAR,
+            price: { mode: "fixed", currency: "HBAR", amount: "0.008" },
           },
           responses: { 200: { description: "Cost breakdown" }, 402: { description: "Payment Required" } },
         },
@@ -242,9 +206,9 @@ app.get("/openapi.json", (c) =>
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`Lockstep resource server on http://localhost:${info.port}`);
-  console.log(`  asset       ${TOKEN} (PRSM)   payTo ${PAY_TO}`);
+  console.log(`  sells       native HBAR -> payTo ${PAY_TO}`);
   console.log(`  facilitator ${FACILITATOR_URL}`);
-  console.log(`  paid        GET /v1/token/:id/cost      $0.02 in PRSM  (split ON)`);
-  console.log(`  paid        GET /v1/account/:id/risk    HBAR           (split OFF, control)`);
-  console.log(`  free        GET /v1/split  /v1/audit/:txId  /health  /.well-known/x402`);
+  console.log(`  paid        GET /v1/token/:id/cost      0.008 \u210f`);
+  console.log(`  paid        GET /v1/account/:id/risk    0.003 \u210f`);
+  console.log(`  free        GET /health  /.well-known/x402`);
 });

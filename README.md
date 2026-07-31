@@ -353,9 +353,13 @@ npm run verify     # end to end, against the live network
 npm run attack     # 11 adversarial cases against the co-signer
 ```
 
-`npm run verify` mocks nothing. It drives a real payment through the running server to a
-public facilitator, then re-derives the on-chain claims from public mirror-node data. It
-cannot prove the off-chain properties, meaning key custody and the safety of the plugin.
+`npm run verify` mocks nothing. It buys a real asset from the foundry through a public
+facilitator, then re-derives every claim from the public mirror node rather than from
+anything the service reported: that the seller was credited the quoted amount, that the
+buyer was debited that amount and no more, that the facilitator paid the network fee, and
+that no token moved. It also checks the studio refuses to sell a render nobody planned.
+
+It cannot prove the off-chain properties, meaning key custody and the safety of the plugin.
 Those rest on reading the code.
 
 ---
@@ -374,6 +378,7 @@ npm run whoami        # resolve the 0.0.x that funding auto-created
 
 npm run gate2         # build the threshold-key payer and settle through both
                       #   public facilitators; also writes .policy.key
+npm run provision     # create the account the resource server is paid at
 
 npm run up            # co-signer and resource server, detached
 npm run agent         # pay for a resource, end to end
@@ -430,9 +435,7 @@ trust.
 lockstep/              the primitive
   policy.mjs           the co-signer's decision logic; sole reader of .policy.key
   policy-server.mjs    the co-signer as its own process
-  audit.mjs            keyless recomputation from public data
   mirror.mjs           public mirror-node reads, with backoff
-  extension.mjs        an x402 extension for disclosure and receipts
 
 studio/                the demo: an agent with a wallet and a job
   studio.mjs           quote, discuss, render, job, receipt, download
