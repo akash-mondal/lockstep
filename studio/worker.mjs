@@ -14,7 +14,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import "dotenv/config";
 import * as sessions from "./sessions.mjs";
@@ -126,14 +126,27 @@ async function render(projectDir) {
  * to look, revise and look again before committing to a render.
  */
 async function snapshot(projectDir, times) {
+  const dir = join(projectDir, "snapshots");
+
+  // Clear first. The agent takes its own snapshots while composing, at whatever
+  // times it chose, and every pass of the design loop leaves its frames behind.
+  // Reading the directory without emptying it returns those together with the
+  // fresh ones, so a critique would judge the version it had just asked to be
+  // changed and the loop could never converge.
+  rmSync(dir, { recursive: true, force: true });
+
   const at = times.map((t) => t.toFixed(2)).join(",");
   await run("npx", ["hyperframes", "snapshot", "--at", at], { ...HF, cwd: projectDir });
-  const dir = join(projectDir, "snapshots");
   if (!existsSync(dir)) return [];
+
+  // Sorted by the time in the filename rather than lexically: frame-10 sorts
+  // before frame-2 as a string, which would hand the reviewer the piece out of
+  // order and invite it to report a continuity problem that does not exist.
   return readdirSync(dir)
     .filter((f) => /^frame-.*\.png$/.test(f))
-    .sort()
-    .map((f) => readFileSync(join(dir, f)).toString("base64"));
+    .map((f) => ({ f, at: Number(/at-([\d.]+)s/.exec(f)?.[1] ?? 0) }))
+    .sort((a, b) => a.at - b.at)
+    .map(({ f }) => readFileSync(join(dir, f)).toString("base64"));
 }
 
 /**
