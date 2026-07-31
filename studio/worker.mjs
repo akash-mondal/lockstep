@@ -22,6 +22,7 @@ import { buy, remaining, settlement, BudgetExceeded } from "./purchase.mjs";
 import { agentTurn, agentJson } from "./harness.mjs";
 import { houseStyle } from "./house-style.mjs";
 import { sample, contentStats } from "./frames.mjs";
+import { refund } from "./refund.mjs";
 
 const run = promisify(execFile);
 const HF = { env: { ...process.env, HYPERFRAMES_SKIP_SKILLS: "1" }, maxBuffer: 32 * 1024 * 1024 };
@@ -239,6 +240,10 @@ export async function runJob(id) {
   } catch (err) {
     const failed = err instanceof BudgetExceeded ? "budget" : "failed";
     sessions.setState(id, failed, { error: String(err.message ?? err) });
+    // The buyer paid before any of this ran, so a job that ends here has taken
+    // money and produced nothing. Send it back without being asked: a refund the
+    // buyer has to request is a refund most buyers never get.
+    await refund(id, String(err.message ?? err));
     throw err;
   }
 }

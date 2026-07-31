@@ -115,11 +115,23 @@ export async function buildReceipt(session, { origin, asset = "0.0.0" }) {
         amountHbar: fmt(owed),
         reason: `The job ended in state "${session.state}" and produced no artifact. ` +
           `The assets the studio bought on the way are its own loss, not the buyer's.`,
-        settled: false,
-        // Said plainly because the alternative is a receipt that looks complete
-        // while a debt sits inside it. `exact` settles before the work starts and
-        // has no refund path, so this is a claim the buyer has to act on.
-        note: "Not yet returned. x402 exact has no refund path, so this is owed, not pending.",
+        settled: Boolean(session.refund?.settled),
+        // A refund is its own transfer with its own id, checkable the same way
+        // every other line here is. When it has not gone through, the receipt
+        // says what went wrong rather than reporting the debt as pending.
+        ...(session.refund?.settled
+          ? {
+              refundedHbar: fmt(session.refund.amount),
+              transactionId: session.refund.transactionId,
+              hashscan: session.refund.hashscan,
+              paidTo: session.refund.to,
+              note: "Returned in full. The studio paid the network fee on the refund.",
+            }
+          : {
+              note: session.refund?.error
+                ? `Not returned: ${session.refund.error}`
+                : "Not yet returned. x402 exact settles before the work, so this is owed.",
+            }),
       },
     }),
 
@@ -167,8 +179,13 @@ export function renderMarkdown(receipt) {
     L.push("");
   }
   if (receipt.outstanding) {
-    L.push(`## ${receipt.outstanding.amountHbar} HBAR is owed back to you`, "");
-    L.push(receipt.outstanding.reason, "", receipt.outstanding.note, "");
+    const o = receipt.outstanding;
+    L.push(o.settled
+      ? `## ${o.refundedHbar} HBAR was refunded to you`
+      : `## ${o.amountHbar} HBAR is owed back to you`, "");
+    L.push(o.reason, "");
+    if (o.hashscan) L.push(`[\`${o.transactionId}\`](${o.hashscan})`, "");
+    L.push(o.note, "");
   }
   const video = receipt.artifacts.find((a) => a.url);
   if (video) L.push(`## The video`, "", `[${video.name}](${video.url}) · ${video.bytes} bytes`, "");
