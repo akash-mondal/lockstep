@@ -78,6 +78,13 @@ export async function buildReceipt(session, { origin, asset = "0.0.0" }) {
   const outbound = outboundFrom(session.ledger ?? []);
   const spent = outbound.reduce((s, o) => s + BigInt(o.amount), 0n);
 
+  // A job that delivered nothing has no making charge, whatever the arithmetic
+  // says. The difference between what was paid and what was spent is a debt in
+  // that case, and the receipt has to name it as one: reporting it as margin
+  // would be the receipt describing a sale that did not happen.
+  const delivered = session.state === "delivered";
+  const owed = !delivered && inbound?.indexed ? BigInt(inbound.gross) : null;
+
   return {
     jobId: session.id,
     title: session.plan?.title ?? null,
@@ -96,10 +103,25 @@ export async function buildReceipt(session, { origin, asset = "0.0.0" }) {
       // What the studio kept for planning, composing, rendering and reviewing.
       // Reported rather than inferred, because a margin you have to work out
       // from two other numbers is a margin somebody is hoping you will not.
-      makingCharge: inbound ? String(BigInt(inbound.gross) - spent) : null,
-      makingChargeHbar: inbound ? fmt(BigInt(inbound.gross) - spent) : null,
+      makingCharge: delivered && inbound ? String(BigInt(inbound.gross) - spent) : null,
+      makingChargeHbar: delivered && inbound ? fmt(BigInt(inbound.gross) - spent) : null,
       unspentBudgetHbar: session.settlement ? fmt(session.settlement.unspentTinybar) : null,
+      owed: owed === null ? null : String(owed),
+      owedHbar: owed === null ? null : fmt(owed),
     },
+
+    ...(owed === null ? {} : {
+      outstanding: {
+        amountHbar: fmt(owed),
+        reason: `The job ended in state "${session.state}" and produced no artifact. ` +
+          `The assets the studio bought on the way are its own loss, not the buyer's.`,
+        settled: false,
+        // Said plainly because the alternative is a receipt that looks complete
+        // while a debt sits inside it. `exact` settles before the work starts and
+        // has no refund path, so this is a claim the buyer has to act on.
+        note: "Not yet returned. x402 exact has no refund path, so this is owed, not pending.",
+      },
+    }),
 
     artifacts: (session.artifacts ?? []).map((a) => ({
       name: a.name,
@@ -135,10 +157,18 @@ export function renderMarkdown(receipt) {
     L.push(`## What it bought`, "");
     L.push(`| asset | cost | settlement |`, `|---|---|---|`);
     for (const o of receipt.outbound) {
-      L.push(`| ${o.what} | ${o.hbar} | ${o.hashscan ? `[check](${o.hashscan})` : "—"} |`);
+      L.push(`| ${o.what} | ${o.hbar} | ${o.hashscan ? `[check](${o.hashscan})` : "not settled"} |`);
     }
-    L.push("", `${receipt.totals.purchases} purchases, ${receipt.totals.spentOnAssetsHbar} HBAR of inputs.`,
-      `Making charge kept by the studio: ${receipt.totals.makingChargeHbar} HBAR.`, "");
+    const n = receipt.totals.purchases;
+    L.push("", `${n} purchase${n === 1 ? "" : "s"}, ${receipt.totals.spentOnAssetsHbar} HBAR of inputs.`);
+    if (receipt.totals.makingChargeHbar) {
+      L.push(`Making charge kept by the studio: ${receipt.totals.makingChargeHbar} HBAR.`);
+    }
+    L.push("");
+  }
+  if (receipt.outstanding) {
+    L.push(`## ${receipt.outstanding.amountHbar} HBAR is owed back to you`, "");
+    L.push(receipt.outstanding.reason, "", receipt.outstanding.note, "");
   }
   const video = receipt.artifacts.find((a) => a.url);
   if (video) L.push(`## The video`, "", `[${video.name}](${video.url}) · ${video.bytes} bytes`, "");
