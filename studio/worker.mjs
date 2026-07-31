@@ -12,6 +12,7 @@
  * pass, and only then does anyone look at pixels.
  */
 import { execFile } from "node:child_process";
+import { cpus } from "node:os";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { readFileSync, writeFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -197,8 +198,13 @@ async function render(projectDir) {
   // draft quality and all four workers. Quality here is encoder effort, not
   // composition: lint and check have already proved the piece is right, and a
   // buyer waiting seven minutes for a marginally smaller file is a bad trade.
+  // Workers are set explicitly. `auto` resolved to 1 on a four core box and
+  // rendered 977 frames single threaded in 333 seconds, which was most of the
+  // job. Each worker is a Chrome process at roughly 256 MB, and this machine has
+  // 15 GB, so the constraint is cores rather than memory.
+  const workers = process.env.STUDIO_RENDER_WORKERS ?? String(Math.max(1, cpus().length - 1));
   const args = ["hyperframes", "render", "-q", process.env.STUDIO_RENDER_QUALITY ?? "draft",
-                "-w", process.env.STUDIO_RENDER_WORKERS ?? "auto"];
+                "-w", workers];
   const { stdout, stderr } = await run("npx", args, { ...HF, cwd: projectDir });
   const all = stdout + stderr;
   const dir = join(projectDir, "renders");
