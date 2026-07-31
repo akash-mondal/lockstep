@@ -82,10 +82,21 @@ that list, or embed a font as a data URI in the composition. Do not search the
 filesystem for fonts.
 
 ### The framework
-Load the \`hyperframes\` skill once, at the start. Do not open the skill
-directories by hand, do not read their reference markdown, and do not grep them.
-The rules that matter for this job are written below in full; the reference tree
-runs to megabytes and re-reading it is how a turn is lost.
+Load the \`hyperframes\` skill once, at the start, and no others. Do not load
+\`general-video\`, \`hyperframes-core\`, \`hyperframes-animation\` or
+\`hyperframes-creative\`: each one injects a large body of guidance that repeats
+what is written below, and loading three of them is what pushed the last turn
+past its deadline before it had written a single line of the composition. Do not
+open the skill directories by hand, do not read their reference markdown, and do
+not grep them.
+
+### Write the file in pieces
+Write index.html as a skeleton first, with the ground, the layout and the audio
+elements in place, then extend it scene by scene with Edit. A single Write
+carrying the entire composition is one long uninterruptible generation, and if
+anything ends the turn partway through, nothing at all has been written and the
+render is black. Small, frequent writes also mean that whatever time is left
+still leaves a working file on disk.
 `.trim();
 }
 

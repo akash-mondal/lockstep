@@ -7,6 +7,7 @@
  * seconds would miss all of them.
  */
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,6 +42,51 @@ export async function sample(path, count = 6) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Are these stills empty, or all the same picture?
+ *
+ * Written after a vision reviewer was handed six byte-identical black PNGs and
+ * replied with callout lines, dotted indicators, rectangular data readouts and
+ * small circular markers, none of which existed, along with a face in a brand
+ * that contains no people. Withholding the plan from that prompt was not enough:
+ * asked to describe frames, it describes frames, and empty input produces
+ * confident fiction rather than an admission.
+ *
+ * So the question is settled before a model is asked, and for free. Identical
+ * digests mean nothing moved. Near-black means nothing is lit. Either way there
+ * is no point buying an opinion about it.
+ *
+ * @param {string[]} paths absolute paths to the stills
+ */
+export async function stillsAreBlank(paths) {
+  if (!paths.length) return { blank: true, reason: "no stills were produced" };
+
+  const digests = paths.map((p) => createHash("sha256").update(readFileSync(p)).digest("hex"));
+  const distinct = new Set(digests).size;
+  if (distinct === 1) {
+    return { blank: true, distinct, reason: `all ${paths.length} stills are byte identical` };
+  }
+
+  let brightest = 0;
+  for (const p of paths) {
+    try {
+      const { stdout } = await run("ffprobe", [
+        "-v", "error", "-f", "lavfi",
+        "-i", `movie=${p.replace(/([:\\'])/g, "\\$1")},signalstats`,
+        "-show_entries", "frame_tags=lavfi.signalstats.YAVG",
+        "-of", "csv=p=0",
+      ]);
+      brightest = Math.max(brightest, Number(String(stdout).trim().split("\n")[0]) || 0);
+    } catch { /* an unreadable still is not evidence of blankness */ }
+  }
+  // PNG is full range, so black really is 0 here, unlike the limited-range MP4
+  // the render produces. A composition with anything lit clears this easily.
+  if (brightest > 0 && brightest < 6) {
+    return { blank: true, distinct, brightest, reason: `every still is near black (brightest ${brightest.toFixed(2)} of 255)` };
+  }
+  return { blank: false, distinct, brightest };
 }
 
 /**

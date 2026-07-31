@@ -22,7 +22,7 @@ import * as sessions from "./sessions.mjs";
 import { buy, remaining, settlement, BudgetExceeded } from "./purchase.mjs";
 import { agentTurn, agentJson } from "./harness.mjs";
 import { houseStyle } from "./house-style.mjs";
-import { sample, contentStats } from "./frames.mjs";
+import { sample, contentStats, stillsAreBlank } from "./frames.mjs";
 import { refund } from "./refund.mjs";
 
 const run = promisify(execFile);
@@ -239,11 +239,12 @@ async function snapshot(projectDir, times) {
   // Sorted by the time in the filename rather than lexically: frame-10 sorts
   // before frame-2 as a string, which would hand the reviewer the piece out of
   // order and invite it to report a continuity problem that does not exist.
-  return readdirSync(dir)
+  const files = readdirSync(dir)
     .filter((f) => /^frame-.*\.png$/.test(f))
     .map((f) => ({ f, at: Number(/at-([\d.]+)s/.exec(f)?.[1] ?? 0) }))
     .sort((a, b) => a.at - b.at)
-    .map(({ f }) => readFileSync(join(dir, f)).toString("base64"));
+    .map(({ f }) => join(dir, f));
+  return { paths: files, frames: files.map((f) => readFileSync(f).toString("base64")) };
 }
 
 /**
@@ -261,8 +262,31 @@ async function snapshot(projectDir, times) {
 async function critique(id, projectDir, seconds, pass) {
   const n = 6;
   const times = Array.from({ length: n }, (_, i) => (seconds * (i + 0.5)) / n);
-  const frames = await snapshot(projectDir, times);
-  if (!frames.length) return { ok: true, notes: "", frames: 0 };
+  const { paths, frames } = await snapshot(projectDir, times);
+  if (!frames.length) {
+    return { ok: false, notes: "The composition produced no stills at all.", frames: 0 };
+  }
+
+  // Settle this without a model. A vision reviewer handed six identical black
+  // PNGs described callout lines, data readouts and a face, none of which were
+  // there. Empty input does not produce an admission, it produces fiction, and
+  // paying 0.08 HBAR for it twice is worse than not asking.
+  const empty = await stillsAreBlank(paths);
+  if (empty.blank) {
+    return {
+      ok: false,
+      frames: frames.length,
+      notes:
+        `The composition is not rendering: ${empty.reason}. This was measured ` +
+        `from the stills, not judged.\n\n` +
+        `Nothing is on screen, so there is no design to review. Find out why ` +
+        `index.html renders empty before changing anything about the look. The ` +
+        `usual causes are a timeline that was never registered on ` +
+        `window.__timelines, clips whose data-start and data-duration put every ` +
+        `element outside the seek window, or a fromTo whose from-state hides ` +
+        `everything at every earlier time.`,
+    };
+  }
 
   const r = await buy(id, "vision", `design review, pass ${pass}`, {
     frames,
@@ -382,7 +406,7 @@ export async function runJob(id) {
         }),
         onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
         maxTurns: Number(process.env.STUDIO_MAX_TURNS ?? 30),
-        timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 420_000),
+        timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 720_000),
       });
 
       note(id, "running lint and check", "gate", 0.5);
