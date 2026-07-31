@@ -405,7 +405,7 @@ export async function runJob(id) {
           detail: String(input?.file_path ?? input?.command ?? input?.skill ?? "").slice(0, 120),
         }),
         onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
-        maxTurns: Number(process.env.STUDIO_MAX_TURNS ?? 30),
+        maxTurns: Number(process.env.STUDIO_MAX_TURNS ?? 90),
         timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 720_000),
       });
 
@@ -441,7 +441,7 @@ export async function runJob(id) {
             detail: String(input?.file_path ?? input?.command ?? input?.skill ?? "").slice(0, 120),
           }),
           onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
-          maxTurns: Number(process.env.STUDIO_REVISE_TURNS ?? 20),
+          maxTurns: Number(process.env.STUDIO_REVISE_TURNS ?? 60),
           timeoutMs: Number(process.env.STUDIO_REVISE_TIMEOUT_MS ?? 240_000),
         });
 
