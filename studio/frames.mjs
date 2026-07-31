@@ -173,6 +173,125 @@ const VIDEO_BLACK = 20;
 // mistaken for an empty one.
 const NO_MOTION = 0.05;
 
+/**
+ * One labelled sheet of the whole piece, for the agent to look at in a single go.
+ *
+ * Every heuristic written for this problem has been beaten by the composition
+ * itself. Average luma passed a film that was 60 percent empty because two good
+ * scenes carried it. Contrast passed the same film because white HUD chrome on
+ * black is high contrast whether or not anything else rendered. Each fix needed
+ * another fix, and none of them can answer "does this scene say what it should".
+ *
+ * The agent can just look. It has vision, it reads an image with one tool call,
+ * and when it hashed six stills itself it caught a black render that a bought
+ * vision model had described in confident detail. So the whole timeline goes on
+ * one sheet with a timestamp burnt into each cell, and it reviews the piece in
+ * one pass rather than a call per frame.
+ *
+ * @param {string} video    the rendered file
+ * @param {string} outPath  where to write the sheet
+ * @param {number} every    seconds between samples
+ */
+export async function contactSheet(video, outPath, every = 5) {
+  const secs = await duration(video);
+  const count = Math.max(1, Math.ceil(secs / every));
+  const cols = Math.min(4, count);
+  const rows = Math.ceil(count / cols);
+
+  await run("ffmpeg", [
+    "-v", "error", "-i", video,
+    "-vf",
+    // The timestamp is burnt in because a grid of stills is useless if the
+    // reviewer cannot say which second is broken.
+    `fps=1/${every},scale=480:-1,` +
+    `drawtext=text='%{eif\\\\:n*${every}\\\\:d}s':x=10:y=10:fontsize=26:fontcolor=white:` +
+    `box=1:boxcolor=black@0.75:boxborderw=6,` +
+    `tile=${cols}x${rows}:margin=8:padding=6:color=#111111`,
+    "-frames:v", "1", "-q:v", "4", outPath,
+  ]);
+  return { path: outPath, count, every, seconds: secs };
+}
+
+/**
+ * Find the empty stretches, not just the empty videos.
+ *
+ * A delivered film ran for 32 seconds and about 60 percent of it, everything
+ * past the 14 second mark, was bare chrome on black: scenes three, four and
+ * five never rendered. contentStats passed it, because the two scenes that did
+ * work carried enough light and motion to clear a whole-video threshold. An
+ * average is exactly the wrong statistic for this question.
+ *
+ * So the video is cut into windows and each one is judged on its own. One
+ * sample every few seconds is plenty to catch a dead scene, and the whole set
+ * is measured in a single pass rather than a call per frame.
+ *
+ * @param {string} path
+ * @param {number} every seconds between samples
+ */
+export async function deadSegments(path, every = 5) {
+  const secs = await duration(path);
+  if (!Number.isFinite(secs) || secs <= 0) return { ok: false, reason: "unreadable duration" };
+
+  const dir = mkdtempSync(join(tmpdir(), "lockstep-seg-"));
+  try {
+    // One ffmpeg pass writes every sample. A call per frame on a 32 second
+    // video is a dozen process launches for information one filter graph
+    // already has.
+    await run("ffmpeg", [
+      "-v", "error", "-i", path,
+      "-vf", `fps=1/${every},scale=480:-1`,
+      "-q:v", "5", join(dir, "s%03d.jpg"),
+    ]);
+    const files = readdirSync(dir).filter((f) => f.endsWith(".jpg")).sort();
+    if (!files.length) return { ok: false, reason: "no samples could be taken" };
+
+    const segments = [];
+    for (const [i, f] of files.entries()) {
+      const at = i * every;
+      const full = join(dir, f);
+      let luma = 0;
+      let range = 0;
+      try {
+        // Parsed by tag name, never by column position. ffprobe emits these in
+        // its own order, not the order they were requested in, and reading them
+        // positionally produced a negative contrast on every sample and marked
+        // a working video entirely dead.
+        const { stdout } = await run("ffprobe", [
+          "-v", "error", "-f", "lavfi",
+          "-i", `movie=${full.replace(/([:\\'])/g, "\\$1")},signalstats`,
+          "-show_entries", "frame_tags=lavfi.signalstats.YAVG,lavfi.signalstats.YMAX,lavfi.signalstats.YMIN",
+          "-of", "default=nw=0",
+        ]);
+        const tag = (name) => {
+          const m = new RegExp(`lavfi\\.signalstats\\.${name}=([-\\d.]+)`).exec(stdout);
+          return m ? Number(m[1]) : null;
+        };
+        luma = tag("YAVG") ?? 0;
+        // Contrast, not brightness. A frame holding only faint chrome on black
+        // is dark and almost flat; a real scene has something bright in it.
+        range = (tag("YMAX") ?? 0) - (tag("YMIN") ?? 0);
+      } catch { /* an unreadable sample is not evidence */ }
+      segments.push({ at, luma: Number(luma.toFixed(2)), range: Number(range.toFixed(2)), dead: range < 40 });
+    }
+
+    const dead = segments.filter((x) => x.dead);
+    return {
+      ok: dead.length === 0,
+      every,
+      segments,
+      deadCount: dead.length,
+      total: segments.length,
+      deadAt: dead.map((x) => x.at),
+      reason: dead.length
+        ? `${dead.length} of ${segments.length} sampled seconds are empty: ` +
+          `nothing but background at ${dead.map((x) => `${x.at}s`).join(", ")}`
+        : null,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export async function contentStats(path, count = 12) {
   const { stdout, stderr } = await run("ffprobe", [
     "-v", "error", "-f", "lavfi",
