@@ -14,6 +14,7 @@
 
 /** Facts about our pipeline that contradict the skills' defaults. */
 function assetContract({ assets, narrationSeconds }) {
+  const transcript = assets.find((a) => /timing|transcript/i.test(a.role ?? ""))?.path ?? null;
   const lines = assets.map(
     (a) => `  ${a.path}   ${a.role}${a.seconds ? `  (${a.seconds.toFixed(2)}s)` : ""}`,
   );
@@ -37,6 +38,11 @@ The narration is ${narrationSeconds.toFixed(2)} seconds long, measured from the
 file rather than estimated. Time the composition to it exactly. This is the one
 place the usual "~60 seconds" advice does not apply: the spoken length is a known
 quantity here, not a guess.
+${transcript ? `
+The word timings in ${transcript} are the caption track. Each entry carries a
+word and the time it is spoken. Read the file, group the words into phrases, and
+drive the captions off those numbers. They were bought for this job; rendering
+without them wastes an asset the buyer paid for.` : ""}
 `.trim();
 }
 
@@ -70,6 +76,66 @@ const MOTION = `
    how well it is animated.
 8. Any randomness is seeded, and any stop-motion hold is quantized on the integer
    frame index, never on elapsed seconds.
+`.trim();
+
+/**
+ * Typography and graphics, which is where the last render actually failed.
+ *
+ * The motion rules below it are about the camera and they were followed. What
+ * came back was still five photographs at rest with one small label in the
+ * corner of each, because nothing in this file ever said the type had to move,
+ * that captions were required, or that anything should be drawn on top of the
+ * image. An agent given no instruction about a layer does not invent one.
+ */
+const GRAPHICS = `
+## The type is the motion graphics, not a caption on a photo
+
+The most common failure on this pipeline is a bought photograph shown whole, at
+rest, with one small static label in a corner. That is a slide with a watermark.
+Every rule here is a requirement.
+
+### Captions are mandatory
+Word timings were bought for this job and are on disk as a transcript. Build
+real captions from them:
+  - Every spoken word appears on screen, synchronised to its own timing. Do not
+    estimate, do not paraphrase, do not caption only the headline lines.
+  - Group into phrases of 3 to 7 words. A caption that changes on every single
+    word is strobing; one that holds a whole sentence is a subtitle track.
+  - Animate the transition between phrases. Mask reveal, per-word stagger, or a
+    weight or tracking shift. A hard cut between caption blocks is not motion.
+  - Set them in the lower third with real margin, never flush to the frame edge,
+    and give them a scrim or shadow so they survive a bright plate underneath.
+A job that buys word timings and renders no captions has thrown away an asset
+the buyer paid for.
+
+### Type must animate in and out
+No element arrives by opacity alone and nothing is ever simply present.
+  - Reveal type behind a moving mask, or stagger it by word or character, or
+    transition its weight, tracking or size. Pick one per register and hold it.
+  - Type carries the ambient idle too: a slow tracking drift or a 1% scale.
+  - Text leaves deliberately. It never simply disappears between frames.
+
+### Build a type hierarchy, not one label
+At least three registers, visibly different in size, weight and treatment:
+a display line for the idea of the scene, a supporting line or kicker, and small
+uppercase utility type with wide tracking for labels and numbers. A single size
+used everywhere is what makes a frame look empty.
+
+### Draw on top of the image
+Each scene carries at least three graphic elements that are not photography:
+measurement rules with tick marks, callout lines that connect a label to a real
+point in the plate, framing brackets or crop marks, a numeric readout that
+counts, a progress or timeline indicator, an underline that draws itself, a
+divider that extends. Keep them in the accent and the neutrals; they are
+instruments, not decoration. They must be tied to the composition's timeline so
+they draw, extend or count rather than appearing whole.
+
+### Frame tight, and leave room to move
+A plate shown whole and centred has nowhere to go. Place every image at 1.15 to
+1.3 scale so the camera has travel, and crop deliberately: go past the edge of
+the subject rather than fitting it politely inside the frame. Vary the framing
+across scenes. Two consecutive scenes at the same distance read as one static
+shot, however much the camera moves within them.
 `.trim();
 
 /** The two properties that stop a multi-scene piece reading as slides. */
@@ -161,6 +227,8 @@ export function houseStyle(job) {
     ``,
     MOTION,
     ``,
+    GRAPHICS,
+    ``,
     CONTINUITY,
     ``,
     DETERMINISM,
@@ -169,12 +237,15 @@ export function houseStyle(job) {
     ``,
     `## Deliverables`,
     ``,
-    `Write STORYBOARD.md and SCRIPT.md before you write any HTML, following the`,
-    `beat formula: element, motion, layout, style, timing, one sentence per`,
-    `element, with real timestamps taken from the narration. Quote all on-screen`,
-    `copy exactly; unquoted copy gets paraphrased. Name any registry block you`,
-    `intend to adapt.`,
+    `index.html is the deliverable and the only one. STORYBOARD.md is already`,
+    `written and handed to you; do not rewrite it, and do not author further`,
+    `planning documents. Prose about the video is not progress on the video.`,
+    ``,
+    `Plan in your head against the beat formula, element, motion, layout, style,`,
+    `timing, using real timestamps taken from the narration, then build. Quote all`,
+    `on-screen copy exactly. Name any registry block you adapt in an HTML comment`,
+    `at the point you use it.`,
   ].join("\n");
 }
 
-export { MOTION, CONTINUITY, DETERMINISM, GATE };
+export { MOTION, GRAPHICS, CONTINUITY, DETERMINISM, GATE };

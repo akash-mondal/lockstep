@@ -134,9 +134,21 @@ async function review(id, mp4, plan) {
         `These are ${frames.length} frames sampled evenly across one video. ` +
         `Describe only what is actually visible in each frame. If a frame is ` +
         `empty, black, or contains nothing at all, say exactly that and do not ` +
-        `infer what it was meant to contain. Then list what is wrong: text cut ` +
-        `off or overlapping, a dead frame, a composition that reads as ` +
-        `unfinished. Name the frame number for each problem. Do not reassure me.`,
+        `infer what it was meant to contain.\n\n` +
+        `Then answer each of these about the set, counting what you can see:\n` +
+        `1. How many frames carry a caption or subtitle line? This film has ` +
+        `spoken narration throughout, so a frame without one is a defect.\n` +
+        `2. How many distinct sizes or weights of text appear? One size ` +
+        `everywhere means no hierarchy.\n` +
+        `3. What graphic elements are drawn over the photography: rules, tick ` +
+        `marks, callout lines, brackets, readouts? Name them, or say none.\n` +
+        `4. Is the subject shown whole and centred with empty margin around it, ` +
+        `or is the framing tight and cropped?\n\n` +
+        `Finally list what is wrong: text cut off or overlapping, a dead frame, ` +
+        `a bare photograph with a single small label, a composition that reads ` +
+        `as unfinished. Name the frame number for each problem. A frame that is ` +
+        `just a photograph with one label in the corner is the failure I am ` +
+        `looking for. Do not reassure me.`,
     });
     return { text: r.text, frames: frames.length };
   } catch (err) {
