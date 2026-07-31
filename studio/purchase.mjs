@@ -52,7 +52,39 @@ export class BudgetExceeded extends Error {
  * @param {string} what       human description, for the bill
  * @param {object} payload    the foundry request body
  */
+/**
+ * Buy something, and try again if the supplier merely stumbled.
+ *
+ * A whole paid job died because one image call returned 502 "model returned no
+ * image". Generative suppliers fail transiently all the time, and losing the
+ * buyer's entire render to one of them is not a tradeoff worth defending.
+ *
+ * Each attempt is a fresh payment, because the previous one may already have
+ * settled and there is nothing to reuse. That is real money, so it is bounded,
+ * only for transient statuses, and every attempt appears on the receipt: the
+ * buyer sees what a retry cost rather than finding a purchase they cannot
+ * account for.
+ */
 export async function buy(sessionId, sku, what, payload) {
+  const attempts = Number(process.env.STUDIO_SUPPLIER_RETRIES ?? 2) + 1;
+  let last = null;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await buyOnce(sessionId, sku, i === 1 ? what : `${what} (retry ${i - 1})`, payload);
+    } catch (err) {
+      last = err;
+      if (!err.transient || i === attempts) throw err;
+      if (err instanceof BudgetExceeded) throw err;
+      sessions.publish(sessionId, {
+        type: "retry", what, attempt: i, of: attempts, reason: String(err.message).slice(0, 160),
+      });
+      await new Promise((r) => setTimeout(r, 1500 * i));
+    }
+  }
+  throw last;
+}
+
+async function buyOnce(sessionId, sku, what, payload) {
   const session = sessions.read(sessionId);
   if (!session) throw new Error(`no session ${sessionId}`);
 
@@ -104,7 +136,27 @@ export async function buy(sessionId, sku, what, payload) {
       }),
     });
     if (paid.status !== 200) {
-      throw new Error(`${what} failed: ${paid.status} ${(await paid.text()).slice(0, 200)}`);
+      const detail = (await paid.text()).slice(0, 200);
+
+      // Record the payment anyway if it settled. x402 settles before the
+      // handler runs, so a supplier that takes the money and then fails has
+      // still taken it: throwing here without reading the header would leave
+      // real money moved and absent from the receipt. It bought nothing, and
+      // the receipt should say exactly that rather than omit the line.
+      const settled = paid.headers.get("payment-response");
+      if (settled) {
+        let ref = null;
+        try { ref = decode(settled).transaction; } catch { /* unreadable */ }
+        sessions.addPayment(sessionId, {
+          sku, what: `${what} (paid, no goods: ${paid.status})`,
+          tinybar: String(amount), asset: "0.0.0", transactionId: ref,
+        });
+      }
+      const err = new Error(`${what} failed: ${paid.status} ${detail}`);
+      // 5xx and 429 are the supplier having a bad moment rather than a refusal,
+      // and a model returning no image is the common one. Worth another go.
+      err.transient = paid.status >= 500 || paid.status === 429;
+      throw err;
     }
 
     const settle = paid.headers.get("payment-response");
