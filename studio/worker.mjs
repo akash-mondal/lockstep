@@ -27,6 +27,10 @@ import { refund } from "./refund.mjs";
 const run = promisify(execFile);
 const HF = { env: { ...process.env, HYPERFRAMES_SKIP_SKILLS: "1" }, maxBuffer: 32 * 1024 * 1024 };
 const MAX_FIX_PASSES = Number(process.env.STUDIO_FIX_PASSES ?? 2);
+// How many times the piece is looked at and revised before it is rendered.
+// Each pass is one vision call and one agent turn, which is the cost of the
+// studio spending longer on the work rather than shipping its first attempt.
+const DESIGN_PASSES = Number(process.env.STUDIO_DESIGN_PASSES ?? 3);
 
 const note = (id, progress) => sessions.update(id, (s) => { s.progress = progress; return s; });
 
@@ -114,6 +118,71 @@ async function render(projectDir) {
 }
 
 /**
+ * Snapshot the composition without rendering it.
+ *
+ * A render of half a minute at 1080p takes minutes and produces a file nobody
+ * needs if the design is wrong. `snapshot` seeks the same composition in the
+ * same headless browser and writes stills in seconds, which makes it affordable
+ * to look, revise and look again before committing to a render.
+ */
+async function snapshot(projectDir, times) {
+  const at = times.map((t) => t.toFixed(2)).join(",");
+  await run("npx", ["hyperframes", "snapshot", "--at", at], { ...HF, cwd: projectDir });
+  const dir = join(projectDir, "snapshots");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => /^frame-.*\.png$/.test(f))
+    .sort()
+    .map((f) => readFileSync(join(dir, f)).toString("base64"));
+}
+
+/**
+ * Look at the design and decide whether it is finished.
+ *
+ * This is the loop the pipeline was missing. Composing once and rendering
+ * whatever came out means the only quality signal arrives after the money has
+ * been spent, and the review that did exist was recorded and never acted on, so
+ * nothing in the system could improve its own work.
+ *
+ * The checklist is concrete on purpose. Asking a model whether a frame "looks
+ * good" gets agreement; asking it to count captions and name drawn elements gets
+ * an answer that can fail.
+ */
+async function critique(id, projectDir, seconds, pass) {
+  const n = 6;
+  const times = Array.from({ length: n }, (_, i) => (seconds * (i + 0.5)) / n);
+  const frames = await snapshot(projectDir, times);
+  if (!frames.length) return { ok: true, notes: "", frames: 0 };
+
+  const r = await buy(id, "vision", `design review, pass ${pass}`, {
+    frames,
+    question:
+      `These are ${frames.length} stills from one motion graphics piece, in time ` +
+      `order. It has spoken narration throughout and word timings were bought ` +
+      `for captions.\n\n` +
+      `Count, do not judge:\n` +
+      `1. How many of these frames carry a caption or subtitle?\n` +
+      `2. How many distinct text sizes or weights appear across the set?\n` +
+      `3. Name every graphic element drawn over the photography: rules, ticks, ` +
+      `callout lines, brackets, readouts, dividers. Say none if there are none.\n` +
+      `4. In how many frames is the photograph full bleed, filling the entire ` +
+      `frame as a background, rather than placed as a shaped or framed element ` +
+      `with ground visible around it?\n` +
+      `5. Is the framing varied across the set, or is every shot at the same ` +
+      `distance?\n\n` +
+      `This piece fails if captions are missing, if there is one text size, if ` +
+      `nothing is drawn over the image, or if every frame is a full bleed ` +
+      `photograph with a small label. Those are the specific defects.\n\n` +
+      `End your reply with exactly one line, either:\n` +
+      `VERDICT: PASS\n` +
+      `VERDICT: REVISE followed by the numbered changes that would fix it.`,
+  });
+
+  const text = String(r.text ?? "");
+  return { ok: /VERDICT:\s*PASS/i.test(text), notes: text, frames: frames.length };
+}
+
+/**
  * Look at what was rendered.
  *
  * `check` can prove an element is inside its region and legible; it cannot say
@@ -198,6 +267,44 @@ export async function runJob(id) {
 
       note(id, "running lint and check");
       lastGate = await gate(projectDir);
+      if (!lastGate.ok) { attempt++; continue; }
+
+      // The design loop. Snapshots are cheap and a render is not, so the piece
+      // is looked at and revised here, before anything commits to minutes of
+      // rendering. Each pass costs one vision call, which is why it is bounded.
+      for (let pass = 1; pass <= DESIGN_PASSES; pass++) {
+        note(id, `design review, pass ${pass} of ${DESIGN_PASSES}`);
+        let verdict;
+        try {
+          verdict = await critique(id, projectDir, narrationSeconds, pass);
+        } catch (err) {
+          if (err instanceof BudgetExceeded) break;
+          throw err;
+        }
+        sessions.update(id, (s) => {
+          s.critiques = [...(s.critiques ?? []), { pass, ok: verdict.ok, notes: verdict.notes }];
+          return s;
+        });
+        if (verdict.ok) break;
+
+        note(id, `revising the design, pass ${pass}`);
+        await agentTurn({
+          sessionId: id,
+          prompt: revisePrompt(projectDir, verdict.notes),
+          allowedTools: ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+          maxTurns: 60,
+          timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 1_500_000),
+        });
+
+        const regate = await gate(projectDir);
+        if (!regate.ok) {
+          // A revision that breaks the gate is worse than the version it
+          // replaced, so it goes back through the ordinary fix path.
+          lastGate = regate;
+          break;
+        }
+        lastGate = regate;
+      }
       if (!lastGate.ok) { attempt++; continue; }
 
       note(id, "rendering");
@@ -297,6 +404,21 @@ When you believe it is right, run:
     HYPERFRAMES_SKIP_SKILLS=1 npx hyperframes lint
     HYPERFRAMES_SKIP_SKILLS=1 npx hyperframes check
 and fix whatever they report. Do not render; that happens outside this turn.
+`.trim();
+
+const revisePrompt = (dir, notes) => `
+A design review of ${dir} came back with changes. These are counted observations
+of the stills, not opinions, and the piece is not finished until they are gone.
+
+${notes}
+
+Revise index.html. Do not start over and do not restate the plan; change what was
+named. Re-read DIRECTION.md if you need the standing rules, then run:
+    HYPERFRAMES_SKIP_SKILLS=1 npx hyperframes lint
+    HYPERFRAMES_SKIP_SKILLS=1 npx hyperframes check
+You can look at your own work without rendering:
+    HYPERFRAMES_SKIP_SKILLS=1 npx hyperframes snapshot --at 2,8,16,24
+Do not render. That happens outside this turn.
 `.trim();
 
 const fixPrompt = (dir, gate) => `

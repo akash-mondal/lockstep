@@ -18,7 +18,19 @@ export const SKU = {
   speech: 5_000_000n,
   music: 50_000_000n,
   transcribe: 10_000_000n,
+  vision: 8_000_000n,
 };
+
+/**
+ * How many times the studio looks at its own work and pays to do so.
+ *
+ * Each design pass is a vision call against snapshots, plus a final look at the
+ * render. This is priced in rather than absorbed because looking is not
+ * incidental: it is the difference between shipping a first attempt and shipping
+ * something revised, and a budget that does not cover it quietly stops the loop
+ * partway through.
+ */
+export const LOOKS = 4;
 
 /** How much of a quote is margin rather than cost, at the default multiplier. */
 export const MARGIN_NOTE = "quote = measured cost x MULTIPLIER; the remainder is the making charge";
@@ -79,10 +91,11 @@ export function priceJob(plan) {
 
 /** A spend ceiling for the job, so a looping agent cannot outrun its budget. */
 export function budgetFor(quotePlan) {
-  // The agent may buy at most what the plan implies, plus one retry of the most
-  // expensive single item. Anything beyond that is a loop, not a job.
+  // The agent may buy at most what the plan implies, plus every look the design
+  // loop is allowed, plus one retry of the most expensive single item. Anything
+  // beyond that is a loop, not a job.
   const cost = BigInt(quotePlan.costTinybar);
-  return String(cost + SKU.music);
+  return String(cost + SKU.vision * BigInt(LOOKS) + SKU.music);
 }
 
 export const hbar = (tinybar) => Number(BigInt(tinybar)) / 1e8;

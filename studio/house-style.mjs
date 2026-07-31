@@ -130,6 +130,30 @@ divider that extends. Keep them in the accent and the neutrals; they are
 instruments, not decoration. They must be tied to the composition's timeline so
 they draw, extend or count rather than appearing whole.
 
+### The images are assets to compose with, not wallpaper
+The default failure is to stretch a photograph across all 1920x1080, drop a word
+on top, and call it a scene. That is a background with a caption. The plate is a
+design element and should be placed, sized and shaped like one.
+
+Build a layout. Reach for these rather than full bleed:
+  - the plate inside a frame, card or masked shape, with the ground visible
+    around it and the layout holding it in place
+  - a split: plate on one side, type and graphics on the other, on a real grid
+  - an inset or picture-in-picture against a plain ground, offset from centre
+  - two or three plates on screen at once, compared, sequenced, or stacked with
+    depth between them
+  - a plate masked into a shape the subject implies, a slot, a rail, an aperture
+  - a plate that moves as an object: sliding in as a panel, scaling from a mark,
+    being pushed aside by the next one
+
+Full bleed is allowed, but as a deliberate move for one or two beats, usually
+the opening or the spectacle. If every scene is full bleed you have made a
+slideshow with a soundtrack.
+
+The ground matters. Negative space in the brand's own colour, with the plate
+sitting in it, reads as designed. An image with no visible ground has nothing to
+be composed against.
+
 ### Frame tight, and leave room to move
 A plate shown whole and centred has nowhere to go. Place every image at 1.15 to
 1.3 scale so the camera has travel, and crop deliberately: go past the edge of
