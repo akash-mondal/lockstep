@@ -289,6 +289,28 @@ failure being designed out is a shared scratch directory: everything looks fine 
 agent globs `*.jpg` and picks up another's scene. Verified by running two agents
 concurrently, each given a secret, and checking neither could name the other's.
 
+### It looks at its own work before it renders
+
+The first version composed once, rendered whatever came out, and ran a review
+afterwards whose verdict was recorded and never acted on. Nothing in the system
+could improve its own work, so the first attempt was always the delivered one.
+What arrived was five bought photographs stretched full frame with one small
+label in the corner of each: a slideshow with a soundtrack.
+
+`hyperframes snapshot` seeks the same composition in the same headless browser
+and writes stills in seconds, where rendering half a minute at 1080p takes
+minutes. That makes looking cheap enough to do repeatedly, so the piece is
+snapshotted, critiqued and revised up to three times before anything renders.
+
+The critique counts rather than judges. Asking a model whether a frame looks good
+gets agreement; asking how many frames carry a caption, how many text sizes
+appear, what is drawn over the photography, and how many frames are full bleed
+gets an answer that can fail. It ends on `VERDICT: PASS` or `VERDICT: REVISE`,
+and a revise verdict goes back to the agent as numbered changes.
+
+Four looks are priced into the budget rather than absorbed, because a budget that
+does not cover the loop stops it partway through and calls that finished.
+
 ### The pipeline measures its own output
 
 A paid job once settled 6.3 ℏ, bought five images, narration, word timings and a music bed,
@@ -448,7 +470,7 @@ lockstep/              the primitive
 
 studio/                the demo: an agent with a wallet and a job
   studio.mjs           quote, discuss, render, job, receipt, download
-  worker.mjs           buy, compose, gate, render, review, deliver
+  worker.mjs           buy, compose, gate, critique, revise, render, deliver
   purchase.mjs         spending, under a ceiling the agent cannot raise
   plan.mjs             the storyboard the agent writes
   harness.mjs          the agent, confined to one workspace
