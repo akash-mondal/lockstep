@@ -34,6 +34,11 @@ export async function agentTurn({
   timeoutMs = 900_000,
   onText = null,
   onTool = null,
+  // What a tool actually returned. A watcher seeing "Bash: hyperframes check"
+  // learns almost nothing; seeing what check said is the interesting half, and
+  // it arrives on user messages rather than assistant ones, which is why it was
+  // missing.
+  onResult = null,
 }) {
   const cwd = dirOf(sessionId);
   const said = [];
@@ -68,6 +73,21 @@ export async function agentTurn({
           if (block.type === "tool_use") {
             tools.push(block.name);
             onTool?.(block.name, block.input);
+          }
+        }
+      }
+      // Tool results arrive as user messages. This is where a watcher finds out
+      // what the gate said, what a file contained, whether an edit applied.
+      if (msg.type === "user" && onResult) {
+        for (const block of msg.message?.content ?? []) {
+          if (block?.type === "tool_result") {
+            const c = block.content;
+            const text = typeof c === "string"
+              ? c
+              : Array.isArray(c)
+                ? c.map((x) => (typeof x === "string" ? x : x?.text ?? "")).join("")
+                : "";
+            onResult(text, Boolean(block.is_error));
           }
         }
       }

@@ -11,7 +11,7 @@
  * happily contain a defect they would have caught. So nothing renders until both
  * pass, and only then does anyone look at pixels.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { cpus } from "node:os";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
@@ -22,7 +22,7 @@ import * as sessions from "./sessions.mjs";
 import { buy, remaining, settlement, BudgetExceeded } from "./purchase.mjs";
 import { agentTurn, agentJson } from "./harness.mjs";
 import { houseStyle } from "./house-style.mjs";
-import { sample, contentStats, stillsAreBlank } from "./frames.mjs";
+import { sample, contentStats, stillsAreBlank, thumbnail, waveform } from "./frames.mjs";
 import { refund } from "./refund.mjs";
 
 const run = promisify(execFile);
@@ -66,6 +66,28 @@ function note(id, progress, phase, within = 0) {
   sessions.publish(id, { type: "progress", progress, phase, percent });
 }
 
+/**
+ * Put a bought asset on the stream, with something to look at.
+ *
+ * A watcher should see the image appear, not read that it did. Images get a
+ * thumbnail, audio gets its waveform drawn, and anything else goes on as a
+ * described file rather than being silently skipped.
+ */
+async function publishAsset(id, rel, role, absPath) {
+  let preview = null;
+  let kind = "file";
+  if (/\.(jpe?g|png)$/i.test(rel)) {
+    kind = "image";
+    preview = await thumbnail(absPath);
+  } else if (/\.(wav|mp3|m4a)$/i.test(rel)) {
+    kind = "audio";
+    preview = await waveform(absPath);
+  }
+  let bytes = null;
+  try { bytes = readFileSync(absPath).length; } catch { /* gone is not fatal */ }
+  sessions.publish(id, { type: "asset", rel, role, kind, bytes, preview });
+}
+
 /** Buy every asset the plan calls for, inside the job's budget. */
 async function buyAssets(id, plan) {
   const s = () => sessions.read(id);
@@ -84,6 +106,7 @@ async function buyAssets(id, plan) {
     const file = `scene-${String(scene.id).padStart(2, "0")}.jpg`;
     writeFileSync(dir(file), Buffer.from(r.data, "base64"));
     bought.push({ rel: `assets/${file}`, role: `scene ${scene.id} image` });
+    await publishAsset(id, `assets/${file}`, `scene ${scene.id} image`, dir(file));
   }
 
   let narrationSeconds = 0;
@@ -94,6 +117,7 @@ async function buyAssets(id, plan) {
     writeFileSync(dir("narration.wav"), Buffer.from(r.data, "base64"));
     narrationSeconds = r.seconds ?? 0;
     bought.push({ rel: "assets/narration.wav", role: "narration", seconds: narrationSeconds });
+    await publishAsset(id, "assets/narration.wav", "narration", dir("narration.wav"));
 
     // Word timings, so captions land on the spoken word rather than a guess.
     if (remaining(s()) > 0n) {
@@ -104,6 +128,11 @@ async function buyAssets(id, plan) {
       });
       writeFileSync(dir("transcript.json"), JSON.stringify(t.words, null, 2));
       bought.push({ rel: "assets/transcript.json", role: "word timings" });
+      sessions.publish(id, {
+        type: "asset", rel: "assets/transcript.json", role: "word timings",
+        kind: "timings", words: (t.words ?? []).length,
+        sample: (t.words ?? []).slice(0, 12),
+      });
     }
   }
 
@@ -112,6 +141,7 @@ async function buyAssets(id, plan) {
     const r = await buy(id, "music", "music bed", { prompt: plan.music });
     writeFileSync(dir("bed.mp3"), Buffer.from(r.data, "base64"));
     bought.push({ rel: "assets/bed.mp3", role: "music bed" });
+    await publishAsset(id, "assets/bed.mp3", "music bed", dir("bed.mp3"));
   }
 
   return { bought, narrationSeconds };
@@ -172,6 +202,27 @@ async function measure(sessionDir, bought) {
   return { media, fonts };
 }
 
+/**
+ * One tool call, described for a watcher.
+ *
+ * A Write or an Edit is the moment the composition actually changes, so those
+ * carry the file's new size: a UI can show the piece being built rather than a
+ * list of identical "Edit index.html" lines.
+ */
+function onAgentTool(id, projectDir, name, input) {
+  const target = String(input?.file_path ?? input?.command ?? input?.skill ?? input?.pattern ?? "");
+  const event = { type: "tool", tool: name, detail: target.slice(0, 200) };
+
+  if (name === "Write" || name === "Edit") {
+    const file = join(projectDir, "index.html");
+    try {
+      const text = readFileSync(file, "utf8");
+      event.composition = { bytes: text.length, lines: text.split("\n").length };
+    } catch { /* not written yet */ }
+  }
+  sessions.publish(id, event);
+}
+
 /** Scaffold a HyperFrames project the agent will author into. */
 async function scaffold(id) {
   const workDir = sessions.pathIn(id, "work");
@@ -181,23 +232,51 @@ async function scaffold(id) {
 }
 
 /** lint then check. Both must pass before anything renders. */
-async function gate(projectDir) {
+async function gate(projectDir, id = null) {
   const out = [];
   for (const cmd of ["lint", "check"]) {
     try {
       const { stdout, stderr } = await run("npx", ["hyperframes", cmd], { ...HF, cwd: projectDir });
-      out.push({ cmd, ok: true, output: (stdout + stderr).slice(-3000) });
+      const text = stdout + stderr;
+      out.push({ cmd, ok: true, output: text.slice(-3000) });
+      if (id) {
+        sessions.publish(id, {
+          type: "gate", cmd, ok: true,
+          // The counts are what a UI wants to show; the text is for a human who
+          // clicks through.
+          errors: 0,
+          warnings: Number(/(\d+)\s+warning/.exec(text)?.[1] ?? 0),
+          output: text.slice(-1200),
+        });
+      }
     } catch (err) {
-      return { ok: false, failed: cmd, output: String(err.stdout ?? "" ) + String(err.stderr ?? err.message) };
+      const text = String(err.stdout ?? "") + String(err.stderr ?? err.message);
+      if (id) {
+        sessions.publish(id, {
+          type: "gate", cmd, ok: false,
+          errors: Number(/(\d+)\s+error/.exec(text)?.[1] ?? 0),
+          warnings: Number(/(\d+)\s+warning/.exec(text)?.[1] ?? 0),
+          // Each failing assertion on its own line, so a UI can list them.
+          findings: text.split("\n").filter((l) => /✗|error/i.test(l)).slice(0, 25).map((l) => l.trim()),
+          output: text.slice(-1200),
+        });
+      }
+      return { ok: false, failed: cmd, output: text };
     }
   }
   return { ok: true, passes: out };
 }
 
-async function render(projectDir) {
-  // draft quality and all four workers. Quality here is encoder effort, not
-  // composition: lint and check have already proved the piece is right, and a
-  // buyer waiting seven minutes for a marginally smaller file is a bad trade.
+/**
+ * Render, reporting frames as they are captured.
+ *
+ * hyperframes emits structured trace lines carrying totalFrames and
+ * framesCompleted, and buffering them until the process exits throws away the
+ * only fine-grained progress in the whole pipeline. Rendering is a quarter of a
+ * job's wall clock, so this is exactly the stretch a watcher should not be left
+ * staring at a spinner through.
+ */
+async function render(id, projectDir) {
   // Workers are set explicitly. `auto` resolved to 1 on a four core box and
   // rendered 977 frames single threaded in 333 seconds, which was most of the
   // job. Each worker is a Chrome process at roughly 256 MB, and this machine has
@@ -205,12 +284,44 @@ async function render(projectDir) {
   const workers = process.env.STUDIO_RENDER_WORKERS ?? String(Math.max(1, cpus().length - 1));
   const args = ["hyperframes", "render", "-q", process.env.STUDIO_RENDER_QUALITY ?? "draft",
                 "-w", workers];
-  const { stdout, stderr } = await run("npx", args, { ...HF, cwd: projectDir });
-  const all = stdout + stderr;
+
+  await new Promise((resolve, reject) => {
+    const child = spawn("npx", args, { ...HF, cwd: projectDir });
+    let tail = "";
+    let lastPct = -1;
+
+    const scan = (chunk) => {
+      tail = (tail + chunk).slice(-16_000);
+      for (const line of String(chunk).split("\n")) {
+        const m = /"totalFrames":(\d+),"framesCompleted":(\d+)/.exec(line)
+          ?? /"framesCompleted":(\d+).*?"totalFrames":(\d+)/.exec(line);
+        if (!m) continue;
+        const [total, done] = /"totalFrames":(\d+),"framesCompleted":/.test(line)
+          ? [Number(m[1]), Number(m[2])]
+          : [Number(m[2]), Number(m[1])];
+        if (!total) continue;
+        const pct = Math.round((done / total) * 100);
+        // Only on change, or a 977 frame render becomes a thousand messages.
+        if (pct === lastPct) continue;
+        lastPct = pct;
+        sessions.publish(id, { type: "render", framesCompleted: done, totalFrames: total, framePercent: pct });
+        note(id, `rendering frame ${done} of ${total}`, "rendering", done / total);
+      }
+    };
+
+    child.stdout?.on("data", scan);
+    child.stderr?.on("data", scan);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) return resolve();
+      reject(new Error(`render exited ${code}:\n${tail.slice(-800)}`));
+    });
+  });
+
   const dir = join(projectDir, "renders");
-  if (!existsSync(dir)) throw new Error(`render produced no output:\n${all.slice(-800)}`);
+  if (!existsSync(dir)) throw new Error("render produced no output directory");
   const mp4 = readdirSync(dir).filter((f) => f.endsWith(".mp4")).sort().pop();
-  if (!mp4) throw new Error(`render produced no mp4:\n${all.slice(-800)}`);
+  if (!mp4) throw new Error("render produced no mp4");
   return join(dir, mp4);
 }
 
@@ -263,6 +374,11 @@ async function critique(id, projectDir, seconds, pass) {
   const n = 6;
   const times = Array.from({ length: n }, (_, i) => (seconds * (i + 0.5)) / n);
   const { paths, frames } = await snapshot(projectDir, times);
+  // The actual stills, so a watcher sees what the studio is judging rather than
+  // only the judgement. These are already small.
+  sessions.publish(id, {
+    type: "snapshot", pass, at: times.map((t) => Number(t.toFixed(2))), stills: frames,
+  });
   if (!frames.length) {
     return { ok: false, notes: "The composition produced no stills at all.", frames: 0 };
   }
@@ -313,7 +429,9 @@ async function critique(id, projectDir, seconds, pass) {
   });
 
   const text = String(r.text ?? "");
-  return { ok: /VERDICT:\s*PASS/i.test(text), notes: text, frames: frames.length };
+  const ok = /VERDICT:\s*PASS/i.test(text);
+  sessions.publish(id, { type: "critique", pass, ok, notes: text.slice(0, 2000) });
+  return { ok, notes: text, frames: frames.length };
 }
 
 /**
@@ -365,6 +483,23 @@ export async function runJob(id) {
   const plan = session.plan;
 
   try {
+    // The storyboard up front, so a watcher has the shape of the whole job
+    // before the first payment rather than assembling it from progress lines.
+    sessions.publish(id, {
+      type: "plan",
+      title: plan.title,
+      angle: plan.angle ?? null,
+      look: plan.look ?? null,
+      continuity: plan.continuity ?? null,
+      spectacle: plan.spectacle ?? null,
+      scenes: (plan.scenes ?? []).map((sc) => ({
+        id: sc.id, beat: sc.beat ?? null, imagePrompt: sc.imagePrompt ?? null,
+      })),
+      narration: plan.narration ?? [],
+      quoteHbar: Number(plan.pricing?.quoteTinybar ?? 0) / 1e8,
+      budgetHbar: Number(plan.budgetTinybar ?? 0) / 1e8,
+    });
+
     sessions.setState(id, "buying");
     const { bought, narrationSeconds } = await buyAssets(id, plan);
 
@@ -400,17 +535,17 @@ export async function runJob(id) {
         allowedTools: ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         // Publish what the agent is doing as it does it. A job that takes
         // minutes and spends money throughout should never be a blank wait.
-        onTool: (name, input) => sessions.publish(id, {
-          type: "tool", tool: name,
-          detail: String(input?.file_path ?? input?.command ?? input?.skill ?? "").slice(0, 120),
+        onTool: (name, input) => onAgentTool(id, projectDir, name, input),
+        onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 1200) }),
+        onResult: (text, isError) => sessions.publish(id, {
+          type: "result", ok: !isError, text: String(text).slice(0, 900),
         }),
-        onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
         maxTurns: Number(process.env.STUDIO_MAX_TURNS ?? 90),
         timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 720_000),
       });
 
       note(id, "running lint and check", "gate", 0.5);
-      lastGate = await gate(projectDir);
+      lastGate = await gate(projectDir, id);
       if (!lastGate.ok) { attempt++; continue; }
 
       // The design loop. Snapshots are cheap and a render is not, so the piece
@@ -436,16 +571,16 @@ export async function runJob(id) {
           sessionId: id,
           prompt: revisePrompt(projectDir, verdict.notes),
           allowedTools: ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-          onTool: (name, input) => sessions.publish(id, {
-            type: "tool", tool: name,
-            detail: String(input?.file_path ?? input?.command ?? input?.skill ?? "").slice(0, 120),
+          onTool: (name, input) => onAgentTool(id, projectDir, name, input),
+          onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 1200) }),
+          onResult: (text, isError) => sessions.publish(id, {
+            type: "result", ok: !isError, text: String(text).slice(0, 900),
           }),
-          onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
           maxTurns: Number(process.env.STUDIO_REVISE_TURNS ?? 60),
           timeoutMs: Number(process.env.STUDIO_REVISE_TIMEOUT_MS ?? 240_000),
         });
 
-        const regate = await gate(projectDir);
+        const regate = await gate(projectDir, id);
         if (!regate.ok) {
           // A revision that breaks the gate is worse than the version it
           // replaced, so it goes back through the ordinary fix path.
@@ -457,7 +592,7 @@ export async function runJob(id) {
       if (!lastGate.ok) { attempt++; continue; }
 
       note(id, "rendering", "rendering", 0.05);
-      const candidate = await render(projectDir);
+      const candidate = await render(id, projectDir);
 
       // Rendering successfully is not the same as having composed anything. An
       // untouched scaffold renders perfectly well and produces pure black, and

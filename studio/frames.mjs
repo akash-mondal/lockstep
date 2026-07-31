@@ -45,6 +45,60 @@ export async function sample(path, count = 6) {
 }
 
 /**
+ * A small preview of something that was bought.
+ *
+ * The stream carries these so a watcher sees the actual asset arrive rather
+ * than a line of text claiming it did. Deliberately small: a job buys five
+ * images and takes six stills per critique, and a stream is not a place to move
+ * full resolution media.
+ *
+ * @param {string} path      a file on disk
+ * @param {number} width     longest edge, in pixels
+ * @returns {Promise<string|null>} base64 JPEG, or null if it cannot be made
+ */
+export async function thumbnail(path, width = 400) {
+  const dir = mkdtempSync(join(tmpdir(), "lockstep-thumb-"));
+  try {
+    const out = join(dir, "t.jpg");
+    await run("ffmpeg", [
+      "-v", "error", "-i", path,
+      "-frames:v", "1", "-q:v", "6", "-vf", `scale=${width}:-1`, out,
+    ]);
+    return readFileSync(out).toString("base64");
+  } catch {
+    // Audio, JSON and anything else without a picture in it. Not an error.
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The shape of a waveform, for assets that have sound rather than a picture.
+ *
+ * Narration and a music bed are two of the things a job buys, and a watcher
+ * should see them arrive as something other than a filename. This renders the
+ * waveform as an image, which is the honest visual for audio.
+ */
+export async function waveform(path, width = 400, height = 80) {
+  const dir = mkdtempSync(join(tmpdir(), "lockstep-wave-"));
+  try {
+    const out = join(dir, "w.png");
+    await run("ffmpeg", [
+      "-v", "error", "-i", path,
+      "-filter_complex",
+      `showwavespic=s=${width}x${height}:colors=#25b394:scale=lin`,
+      "-frames:v", "1", out,
+    ]);
+    return readFileSync(out).toString("base64");
+  } catch {
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Are these stills empty, or all the same picture?
  *
  * Written after a vision reviewer was handed six byte-identical black PNGs and
