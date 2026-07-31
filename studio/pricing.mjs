@@ -61,6 +61,9 @@ export const FLOOR = 300_000_000n; // 3 LOCKSTEP
  * @param {boolean}[plan.captions]   captions need a transcription
  */
 export function priceJob(plan) {
+  // A scene is only an image if the plan says it is a photograph. Diagrams,
+  // data slides, interfaces and type scenes are built in the composition and
+  // cost nothing to buy.
   const images = (plan.scenes ?? []).filter((s) => s.image !== false).length;
   const lines = (plan.narration ?? []).length;
   const music = plan.music === false ? 0 : 1;

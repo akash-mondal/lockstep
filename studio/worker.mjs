@@ -100,8 +100,12 @@ async function buyAssets(id, plan) {
   const dir = (f) => sessions.pathIn(id, "assets", f);
   const bought = [];
 
-  for (const scene of plan.scenes) {
-    note(id, `buying image ${scene.id} of ${plan.scenes.length}`, "buying", scene.id / (plan.scenes.length + 3));
+  // Only photograph scenes cost anything. A plan built mostly from diagrams and
+  // data slides buys a fraction of what an all-photography one does, and
+  // usually explains a technical idea better.
+  const photoScenes = plan.scenes.filter((sc) => sc.image !== false);
+  for (const scene of photoScenes) {
+    note(id, `buying image ${scene.id} of ${photoScenes.length}`, "buying", scene.id / (photoScenes.length + 3));
     const r = await buy(id, "image", `scene ${scene.id} image`, {
       prompt: scene.imagePrompt,
       // Seeded so a re-run of the same plan costs nothing new and renders
@@ -371,16 +375,23 @@ export async function runJob(id) {
 
 function storyboardMd(plan, seconds) {
   const per = plan.scenes.length ? (seconds / plan.scenes.length) : 0;
-  const L = [`# ${plan.title}`, ``, `**Angle.** ${plan.angle}`, `**Look.** ${plan.look ?? "—"}`,
-    `**Continuity device.** ${plan.continuity ?? "—"}`,
-    `**Spectacle beat.** ${plan.spectacle ?? "—"}`,
+  const L = [`# ${plan.title}`, ``, `**Angle.** ${plan.angle}`, `**Look.** ${plan.look ?? "not specified"}`,
+    `**Continuity device.** ${plan.continuity ?? "not specified"}`,
+    `**Spectacle beat.** ${plan.spectacle ?? "not specified"}`,
     ``, `Narration runs ${seconds.toFixed(2)}s. Time the composition to it.`, ``];
   plan.scenes.forEach((s, i) => {
     const start = (i * per).toFixed(2), end = ((i + 1) * per).toFixed(2);
     L.push(`## Scene ${s.id} (${start}s - ${end}s)`, ``,
       `- narration: "${plan.narration[i] ?? ""}"`,
       `- idea: ${s.idea}`,
-      `- image: \`../../assets/scene-${String(s.id).padStart(2, "0")}.jpg\``,
+      s.role ? `- role in the argument: ${s.role}` : ``,
+      `- kind: ${s.visual ?? "photograph"}`,
+      // Only a photograph scene has a file. Every other kind is built here, and
+      // pointing it at an image that was never bought is how a diagram scene
+      // ends up as another copy of the same picture.
+      s.image === false
+        ? `- build this, do not look for an image: ${s.build ?? s.idea}`
+        : `- image: \`../../assets/scene-${String(s.id).padStart(2, "0")}.jpg\``,
       s.onScreen ? `- on screen, quoted exactly: "${s.onScreen}"` : `- no on-screen copy`,
       s.motion ? `- motion: ${s.motion}` : ``, ``);
   });

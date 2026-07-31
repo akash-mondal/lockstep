@@ -184,8 +184,14 @@ divider that extends. Keep them in the accent and the neutrals; they are
 instruments, not decoration. They must be tied to the composition's timeline so
 they draw, extend or count rather than appearing whole.
 
+### Set the stage at 1280x720
+The composition is 1280x720. Bought images come in larger and are scaled down,
+which is fine and is why they still look sharp. Rendering at 720 rather than
+1080 more than halves the time a render takes, and nothing in a piece watched in
+a browser needs the extra pixels.
+
 ### The images are assets to compose with, not wallpaper
-The default failure is to stretch a photograph across all 1920x1080, drop a word
+The default failure is to stretch a photograph across the whole frame, drop a word
 on top, and call it a scene. That is a background with a caption. The plate is a
 design element and should be placed, sized and shaped like one.
 
@@ -207,6 +213,27 @@ slideshow with a soundtrack.
 The ground matters. Negative space in the brand's own colour, with the plate
 sitting in it, reads as designed. An image with no visible ground has nothing to
 be composed against.
+
+### Animate the explanation, do not just decorate it
+The motion has to carry the argument, not sit beside it. For each narration line
+ask what the viewer should watch happen, then build that.
+
+  - A number that changes counts, and the old value stays visible long enough to
+    be compared against, struck through or dropping away.
+  - A comparison animates as a comparison: the two states share a layout and the
+    only thing that moves is the difference between them.
+  - A flow draws itself in the order it happens. An arrow arrives, then the box
+    it points at reacts. Nothing in a diagram appears fully formed.
+  - A limit being enforced is shown enforcing: something advances, meets the
+    limit, and stops. Do not show a padlock and call it security.
+  - A list of steps arrives one step at a time, on the beat of the narration
+    naming it, and earlier steps stay on screen so the whole shape accumulates.
+
+Use GSAP timelines with real stagger. Reach past opacity: clip-path and mask
+reveals for wipes, transform-origin for things that pivot or unfold, SVG
+stroke-dashoffset for lines that draw, scale on a single axis for bars and
+meters, blur and brightness for focus pulls. Ease out for arrivals, ease in-out
+for anything travelling, and never linear except on a continuous ambient drift.
 
 ### Frame tight, and leave room to move
 A plate shown whole and centred has nowhere to go. Place every image at 1.15 to
@@ -287,7 +314,7 @@ Only when both pass, render.
  * @param {string} job.brief          what the buyer asked for
  * @param {Array}  job.assets         bought assets: {path, role, seconds?}
  * @param {number} job.narrationSeconds
- * @param {string} [job.aspect]       defaults to 1920x1080
+ * @param {string} [job.aspect]       defaults to 1280x720
  */
 export function houseStyle(job) {
   return [
@@ -298,7 +325,7 @@ export function houseStyle(job) {
     ``,
     `**Brief.** ${job.brief}`,
     ``,
-    `**Spec.** ${job.aspect ?? "1920x1080"}, 30fps, ${job.narrationSeconds.toFixed(2)}s,`,
+    `**Spec.** ${job.aspect ?? "1280x720"}, 30fps, ${job.narrationSeconds.toFixed(2)}s,`,
     `timed to the narration file.`,
     ``,
     assetContract(job),
