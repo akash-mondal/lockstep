@@ -322,6 +322,87 @@ app.post("/v1/render", async (c) => {
   }, 202);
 });
 
+/**
+ * Watch a job while it runs.
+ *
+ * Polling a job that takes minutes tells a buyer almost nothing, and the thing
+ * being withheld is the interesting part: which asset is being bought, what the
+ * agent is touching, how far along the render is. All of that already happens,
+ * it was simply never published.
+ *
+ * Sent as text/event-stream because it survives proxies, reconnects on its own,
+ * and needs no client library. The current state is replayed on connect so a
+ * late subscriber is not left staring at nothing until the next step.
+ */
+app.get("/v1/job/:id/stream", (c) => {
+  const id = c.req.param("id");
+  const session = sessions.read(id);
+  if (!session) return c.json({ error: "no such job" }, 404);
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      let open = true;
+      const send = (event) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          open = false;
+        }
+      };
+
+      // Replay first, so a client that connects late knows where things stand.
+      send({
+        type: "state",
+        state: session.state,
+        progress: session.progress ?? null,
+        percent: session.percent ?? 0,
+        title: session.plan?.title ?? null,
+        purchases: (session.ledger ?? []).length,
+      });
+
+      const unsubscribe = sessions.subscribe(id, (event) => {
+        send(event);
+        if (event.type === "done") close();
+      });
+
+      // A stream held open through a silent stretch is closed by intermediaries
+      // that cannot tell it apart from a dead one. A comment is not an event and
+      // clients ignore it.
+      const beat = setInterval(() => send({ type: "heartbeat" }), 15_000);
+
+      const close = () => {
+        if (!open) return;
+        open = false;
+        clearInterval(beat);
+        unsubscribe();
+        try { controller.close(); } catch { /* already closed */ }
+      };
+
+      c.req.raw.signal?.addEventListener("abort", close);
+
+      // A job that finished before anyone subscribed never emits again, so the
+      // stream would hang forever waiting for an event that cannot come.
+      if (["delivered", "failed", "budget"].includes(session.state)) {
+        send({ type: "done", state: session.state, percent: 100 });
+        close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      // Nginx and friends buffer by default, which turns a live stream into one
+      // large response delivered at the end.
+      "x-accel-buffering": "no",
+    },
+  });
+});
+
 app.get("/v1/job/:id", (c) => {
   const s = sessions.read(c.req.param("id"));
   if (!s) return c.json({ error: "no such job" }, 404);
@@ -330,6 +411,8 @@ app.get("/v1/job/:id", (c) => {
     state: s.state,
     title: s.plan?.title ?? null,
     progress: s.progress ?? null,
+    percent: s.percent ?? 0,
+    stream: `${ORIGIN}/v1/job/${s.id}/stream`,
     purchases: s.ledger.length,
     artifacts: s.artifacts.map((a) => ({ name: a.name, bytes: a.bytes })),
     error: s.error,

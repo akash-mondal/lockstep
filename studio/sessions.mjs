@@ -21,6 +21,7 @@
  *     receipt.json   the bill handed back to the requester
  */
 import { randomBytes } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -131,6 +132,31 @@ export const spent = (record) =>
 export function destroy(id) {
   const dir = dirOf(id);
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+}
+
+/**
+ * Live progress, for anyone watching a job they have paid for.
+ *
+ * A job takes minutes and spends the buyer's money the whole way through, so
+ * "still working" is not an acceptable answer to what is happening. Every step
+ * publishes here and the HTTP layer turns it into an event stream.
+ *
+ * Deliberately in memory and deliberately lossy. This is a view of a job in
+ * flight, not a record of it: the receipt and the session file are the record,
+ * and a dropped frame of progress must never mean a lost payment.
+ */
+const bus = new EventEmitter();
+// One job can be watched by several clients and the default cap of 10 is easy
+// to reach with a browser reconnecting.
+bus.setMaxListeners(0);
+
+export function publish(id, event) {
+  bus.emit(id, { at: Date.now(), ...event });
+}
+
+export function subscribe(id, listener) {
+  bus.on(id, listener);
+  return () => bus.off(id, listener);
 }
 
 export { ROOT };

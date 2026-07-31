@@ -47,6 +47,49 @@ without them wastes an asset the buyer paid for.` : ""}
 }
 
 /**
+ * What is already known, so the turn is spent composing rather than surveying.
+ *
+ * A timed compose turn spent 13 of its first 18 minutes finding out things that
+ * are identical on every job: three minutes grepping the skill tree for which
+ * fonts exist, four minutes probing asset durations, then reading five JPEGs it
+ * had already been given a written storyboard for. Measuring all of it takes
+ * well under a second, so it is measured before the turn starts and stated here
+ * as fact. What is stated as fact must not be re-derived.
+ */
+function known({ media, fonts, narrationSeconds }) {
+  return `
+## Measured facts. Do not go looking for these again.
+
+Every number here was measured on this machine, for these files, moments ago.
+Re-deriving any of it is the single most expensive mistake available in this
+turn, and it produces the same answer.
+
+### The files, with their real durations and dimensions
+${media.join("\n")}
+
+Narration runs ${narrationSeconds.toFixed(2)} seconds. That is the length of the
+piece. Do not probe these files. Do not run ffprobe, ffmpeg, sox, or a shell loop
+over the assets. Do not open the images to see what is in them: the storyboard
+already describes every scene, and a JPEG costs more to look at than to place.
+
+### Fonts installed on this machine
+${fonts.length ? fonts.map((f) => `  ${f}`).join("\n") : "  none reported"}
+
+That list is exhaustive. Anything else silently falls back and your type renders
+in something you did not choose, which is what has been happening. There is no
+network during rendering, so a webfont URL resolves to nothing. Use a family from
+that list, or embed a font as a data URI in the composition. Do not search the
+filesystem for fonts.
+
+### The framework
+Load the \`hyperframes\` skill once, at the start. Do not open the skill
+directories by hand, do not read their reference markdown, and do not grep them.
+The rules that matter for this job are written below in full; the reference tree
+runs to megabytes and re-reading it is how a turn is lost.
+`.trim();
+}
+
+/**
  * The eight motion rules, compressed to the clauses that change output.
  *
  * Stated as requirements rather than suggestions because the failure mode is
@@ -248,6 +291,8 @@ export function houseStyle(job) {
     `timed to the narration file.`,
     ``,
     assetContract(job),
+    ``,
+    known({ media: job.media ?? [], fonts: job.fonts ?? [], narrationSeconds: job.narrationSeconds }),
     ``,
     MOTION,
     ``,

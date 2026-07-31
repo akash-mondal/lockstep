@@ -114,6 +114,24 @@ export async function buy(sessionId, sku, what, payload) {
     sessions.addPayment(sessionId, {
       sku, what, tinybar: String(amount), asset: "0.0.0", transactionId,
     });
+
+    // Money moving is the most interesting thing this system does, so it goes
+    // on the stream with the settlement id: a watcher can open HashScan and
+    // check the payment while the job that made it is still running.
+    const spentNow = sessions.spent(sessions.read(sessionId));
+    sessions.publish(sessionId, {
+      type: "payment",
+      sku,
+      what,
+      tinybar: String(amount),
+      hbar: Number(amount) / 1e8,
+      transactionId,
+      hashscan: transactionId
+        ? `https://hashscan.io/testnet/transaction/${String(transactionId).replace("@", "-").replace(/\.(\d+)$/, "-$1")}`
+        : null,
+      spentHbar: Number(spentNow) / 1e8,
+      budgetHbar: Number(BigInt(session.plan?.budgetTinybar ?? 0)) / 1e8,
+    });
     return out;
   } finally {
     client.close();

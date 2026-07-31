@@ -30,9 +30,40 @@ const MAX_FIX_PASSES = Number(process.env.STUDIO_FIX_PASSES ?? 2);
 // How many times the piece is looked at and revised before it is rendered.
 // Each pass is one vision call and one agent turn, which is the cost of the
 // studio spending longer on the work rather than shipping its first attempt.
-const DESIGN_PASSES = Number(process.env.STUDIO_DESIGN_PASSES ?? 3);
+const DESIGN_PASSES = Number(process.env.STUDIO_DESIGN_PASSES ?? 1);
 
-const note = (id, progress) => sessions.update(id, (s) => { s.progress = progress; return s; });
+/**
+ * How much of a job each phase is worth, measured rather than guessed.
+ *
+ * A percentage that moves in equal steps per phase is a lie: on a timed run,
+ * buying took 54 seconds and composing took over twenty minutes. These weights
+ * come from that measurement, so a bar at 50% means roughly half the wall clock
+ * is gone rather than half the phases.
+ */
+const WEIGHTS = { buying: 12, composing: 42, gate: 4, critique: 12, rendering: 25, delivering: 5 };
+const PHASES = Object.keys(WEIGHTS);
+
+/** Percent complete at the start of a phase, plus progress within it. */
+function percentAt(phase, within = 0) {
+  const before = PHASES.slice(0, PHASES.indexOf(phase)).reduce((n, k) => n + WEIGHTS[k], 0);
+  return Math.min(99, Math.round(before + WEIGHTS[phase] * Math.max(0, Math.min(1, within))));
+}
+
+/**
+ * Record a step and publish it.
+ *
+ * The session file is the record and the stream is the view, so both are
+ * updated here rather than leaving a caller to remember one of them.
+ */
+function note(id, progress, phase, within = 0) {
+  const percent = phase ? percentAt(phase, within) : undefined;
+  sessions.update(id, (s) => {
+    s.progress = progress;
+    if (percent !== undefined) s.percent = percent;
+    return s;
+  });
+  sessions.publish(id, { type: "progress", progress, phase, percent });
+}
 
 /** Buy every asset the plan calls for, inside the job's budget. */
 async function buyAssets(id, plan) {
@@ -41,7 +72,7 @@ async function buyAssets(id, plan) {
   const bought = [];
 
   for (const scene of plan.scenes) {
-    note(id, `buying image ${scene.id} of ${plan.scenes.length}`);
+    note(id, `buying image ${scene.id} of ${plan.scenes.length}`, "buying", scene.id / (plan.scenes.length + 3));
     const r = await buy(id, "image", `scene ${scene.id} image`, {
       prompt: scene.imagePrompt,
       // Seeded so a re-run of the same plan costs nothing new and renders
@@ -56,7 +87,7 @@ async function buyAssets(id, plan) {
 
   let narrationSeconds = 0;
   if (plan.narration?.length) {
-    note(id, "buying narration");
+    note(id, "buying narration", "buying", 0.7);
     const text = plan.narration.join(" ");
     const r = await buy(id, "speech", "narration", { text, voice: "Kore" });
     writeFileSync(dir("narration.wav"), Buffer.from(r.data, "base64"));
@@ -65,7 +96,7 @@ async function buyAssets(id, plan) {
 
     // Word timings, so captions land on the spoken word rather than a guess.
     if (remaining(s()) > 0n) {
-      note(id, "buying transcription");
+      note(id, "buying word timings", "buying", 0.85);
       const t = await buy(id, "transcribe", "word timings", {
         data: readFileSync(dir("narration.wav")).toString("base64"),
         filename: "narration.wav",
@@ -76,13 +107,68 @@ async function buyAssets(id, plan) {
   }
 
   if (plan.music !== false && remaining(s()) > 0n) {
-    note(id, "buying music");
+    note(id, "buying the music bed", "buying", 0.95);
     const r = await buy(id, "music", "music bed", { prompt: plan.music });
     writeFileSync(dir("bed.mp3"), Buffer.from(r.data, "base64"));
     bought.push({ rel: "assets/bed.mp3", role: "music bed" });
   }
 
   return { bought, narrationSeconds };
+}
+
+/**
+ * Everything about this machine and these files, measured once.
+ *
+ * Timed a real compose turn and 13 of its first 18 minutes went on rediscovery:
+ * 181 seconds grepping the skill tree to find out which fonts exist, 233 seconds
+ * probing asset durations in a shell loop, then reading five JPEGs to learn what
+ * it had already been told in the storyboard. None of that is about the job. It
+ * is the same answer every run, and the agent pays for it again every run.
+ *
+ * So it is measured here, in milliseconds, and handed over as fact. `fc-list`
+ * takes six thousandths of a second; the agent spent three minutes not running
+ * it.
+ */
+async function measure(sessionDir, bought) {
+  const probe = async (file) => {
+    try {
+      const { stdout } = await run("ffprobe", [
+        "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=nw=1:nk=1", join(sessionDir, file),
+      ]);
+      return Number(String(stdout).trim());
+    } catch { return null; }
+  };
+  const dims = async (file) => {
+    try {
+      const { stdout } = await run("ffprobe", [
+        "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+        "-of", "csv=p=0", join(sessionDir, file),
+      ]);
+      return String(stdout).trim();
+    } catch { return null; }
+  };
+
+  const media = [];
+  for (const b of bought) {
+    if (/\.(wav|mp3|m4a)$/i.test(b.rel)) {
+      const secs = await probe(b.rel);
+      media.push(`  ${b.rel}   ${b.role}   ${secs ? `${secs.toFixed(2)}s` : "unknown length"}`);
+    } else if (/\.(jpe?g|png)$/i.test(b.rel)) {
+      const wh = await dims(b.rel);
+      media.push(`  ${b.rel}   ${b.role}   ${wh ?? "unknown size"}`);
+    } else {
+      media.push(`  ${b.rel}   ${b.role}`);
+    }
+  }
+
+  let fonts = [];
+  try {
+    const { stdout } = await run("bash", ["-lc", "fc-list : family 2>/dev/null | tr ',' '\\n' | sort -u"]);
+    fonts = String(stdout).split("\n").map((f) => f.trim()).filter(Boolean);
+  } catch { fonts = []; }
+
+  return { media, fonts };
 }
 
 /** Scaffold a HyperFrames project the agent will author into. */
@@ -108,7 +194,12 @@ async function gate(projectDir) {
 }
 
 async function render(projectDir) {
-  const { stdout, stderr } = await run("npx", ["hyperframes", "render"], { ...HF, cwd: projectDir });
+  // draft quality and all four workers. Quality here is encoder effort, not
+  // composition: lint and check have already proved the piece is right, and a
+  // buyer waiting seven minutes for a marginally smaller file is a bad trade.
+  const args = ["hyperframes", "render", "-q", process.env.STUDIO_RENDER_QUALITY ?? "draft",
+                "-w", process.env.STUDIO_RENDER_WORKERS ?? "auto"];
+  const { stdout, stderr } = await run("npx", args, { ...HF, cwd: projectDir });
   const all = stdout + stderr;
   const dir = join(projectDir, "renders");
   if (!existsSync(dir)) throw new Error(`render produced no output:\n${all.slice(-800)}`);
@@ -248,15 +339,18 @@ export async function runJob(id) {
     const { bought, narrationSeconds } = await buyAssets(id, plan);
 
     sessions.setState(id, "composing");
-    note(id, "scaffolding the project");
+    note(id, "scaffolding the project", "composing", 0.02);
     const projectDir = await scaffold(id);
 
     // The storyboard and the standing direction go on disk, because that is how
     // the framework's own skills expect to find them.
+    const facts = await measure(sessions.dirOf(id), bought);
     const direction = houseStyle({
       brief: plan.title,
       assets: bought.map((b) => ({ path: `../../${b.rel}`, role: b.role, seconds: b.seconds })),
       narrationSeconds,
+      media: facts.media,
+      fonts: facts.fonts,
     });
     writeFileSync(join(projectDir, "DIRECTION.md"), direction);
     writeFileSync(join(projectDir, "STORYBOARD.md"), storyboardMd(plan, narrationSeconds));
@@ -267,18 +361,25 @@ export async function runJob(id) {
 
     while (attempt <= MAX_FIX_PASSES) {
       const first = attempt === 0;
-      note(id, first ? "authoring the composition" : `fixing, pass ${attempt}`);
+      note(id, first ? "authoring the composition" : `fixing, pass ${attempt}`, "composing", first ? 0.1 : 0.6);
       await agentTurn({
         sessionId: id,
         prompt: first ? composePrompt(projectDir) : fixPrompt(projectDir, lastGate),
         // Skill is what lets it load the framework's conventions in one call
         // instead of reading the skill tree by hand.
         allowedTools: ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-        maxTurns: 60,
-        timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 1_500_000),
+        // Publish what the agent is doing as it does it. A job that takes
+        // minutes and spends money throughout should never be a blank wait.
+        onTool: (name, input) => sessions.publish(id, {
+          type: "tool", tool: name,
+          detail: String(input?.file_path ?? input?.command ?? input?.skill ?? "").slice(0, 120),
+        }),
+        onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
+        maxTurns: Number(process.env.STUDIO_MAX_TURNS ?? 30),
+        timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 420_000),
       });
 
-      note(id, "running lint and check");
+      note(id, "running lint and check", "gate", 0.5);
       lastGate = await gate(projectDir);
       if (!lastGate.ok) { attempt++; continue; }
 
@@ -286,7 +387,7 @@ export async function runJob(id) {
       // is looked at and revised here, before anything commits to minutes of
       // rendering. Each pass costs one vision call, which is why it is bounded.
       for (let pass = 1; pass <= DESIGN_PASSES; pass++) {
-        note(id, `design review, pass ${pass} of ${DESIGN_PASSES}`);
+        note(id, `design review, pass ${pass} of ${DESIGN_PASSES}`, "critique", (pass - 0.5) / DESIGN_PASSES);
         let verdict;
         try {
           verdict = await critique(id, projectDir, narrationSeconds, pass);
@@ -300,13 +401,18 @@ export async function runJob(id) {
         });
         if (verdict.ok) break;
 
-        note(id, `revising the design, pass ${pass}`);
+        note(id, `revising the design, pass ${pass}`, "critique", pass / DESIGN_PASSES);
         await agentTurn({
           sessionId: id,
           prompt: revisePrompt(projectDir, verdict.notes),
           allowedTools: ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-          maxTurns: 60,
-          timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 1_500_000),
+          onTool: (name, input) => sessions.publish(id, {
+            type: "tool", tool: name,
+            detail: String(input?.file_path ?? input?.command ?? input?.skill ?? "").slice(0, 120),
+          }),
+          onText: (text) => sessions.publish(id, { type: "thought", text: text.slice(0, 300) }),
+          maxTurns: Number(process.env.STUDIO_REVISE_TURNS ?? 20),
+          timeoutMs: Number(process.env.STUDIO_REVISE_TIMEOUT_MS ?? 240_000),
         });
 
         const regate = await gate(projectDir);
@@ -320,7 +426,7 @@ export async function runJob(id) {
       }
       if (!lastGate.ok) { attempt++; continue; }
 
-      note(id, "rendering");
+      note(id, "rendering", "rendering", 0.05);
       const candidate = await render(projectDir);
 
       // Rendering successfully is not the same as having composed anything. An
@@ -338,7 +444,7 @@ export async function runJob(id) {
             `on screen. index.html is almost certainly still the scaffold: it is ` +
             `the composition that is missing, not the render settings.`,
         };
-        note(id, "the render came out blank");
+        note(id, "the render came out blank", "rendering", 0.1);
         attempt++;
         continue;
       }
@@ -366,12 +472,20 @@ export async function runJob(id) {
       s.state = "delivered";
       s.settlement = settlement(s);
       s.progress = "done";
+      s.percent = 100;
       return s;
+    });
+    sessions.publish(id, {
+      type: "done", state: "delivered", percent: 100,
+      artifact: name, bytes: bytes.length,
     });
     return sessions.read(id);
   } catch (err) {
     const failed = err instanceof BudgetExceeded ? "budget" : "failed";
     sessions.setState(id, failed, { error: String(err.message ?? err) });
+    sessions.publish(id, {
+      type: "done", state: failed, percent: 100, error: String(err.message ?? err),
+    });
     // The buyer paid before any of this ran, so a job that ends here has taken
     // money and produced nothing. Send it back without being asked: a refund the
     // buyer has to request is a refund most buyers never get.
