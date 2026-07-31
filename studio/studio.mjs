@@ -115,6 +115,41 @@ const routes = {
 };
 
 const app = new Hono();
+
+/**
+ * Record what the buyer actually paid, so the receipt can show it.
+ *
+ * The settlement lands in a response header that the payment middleware writes
+ * after the handler has already returned, so the handler itself cannot see it.
+ * Without this the receipt shows every onward purchase the agent made and a null
+ * where the inbound payment should be, which is the one line a buyer checking
+ * the bill would look for first.
+ *
+ * The transaction id is all that is kept. What that transaction moved, and to
+ * whom, is read back from the mirror node when the receipt is built, because a
+ * receipt that quotes our own claim about a payment proves nothing.
+ */
+app.use(async (c, next) => {
+  await next();
+  if (c.req.method !== "POST" || new URL(c.req.url).pathname !== "/v1/render") return;
+  const header = c.res.headers.get("payment-response");
+  if (!header) return;
+  const id = c.req.query("plan");
+  if (!id || !sessions.read(id)) return;
+  try {
+    const settled = JSON.parse(Buffer.from(header, "base64").toString("utf8"));
+    if (settled?.transaction) {
+      sessions.update(id, (s) => {
+        s.funding = { transactionId: settled.transaction, at: Date.now() };
+        return s;
+      });
+    }
+  } catch {
+    // A receipt missing its inbound line is worth less than a job that dies
+    // after the buyer has already been charged. Leave it null and carry on.
+  }
+});
+
 app.use(paymentMiddleware(routes, server));
 
 const body = async (c) => { try { return await c.req.json(); } catch { return null; } };

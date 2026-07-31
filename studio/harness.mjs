@@ -24,7 +24,12 @@ import { dirOf } from "./sessions.mjs";
 export async function agentTurn({
   sessionId,
   prompt,
-  allowedTools = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+  // `Skill` is not optional. The composition prompt tells the agent to load the
+  // framework's rules as a skill, and without the tool to invoke one its only
+  // route to those rules is reading the skill tree by hand, which runs to
+  // megabytes. It does not fail when this is missing; it quietly does something
+  // else instead, which is worse.
+  allowedTools = ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
   maxTurns = 40,
   timeoutMs = 900_000,
   onText = null,
@@ -37,28 +42,48 @@ export async function agentTurn({
 
   // A turn that stops making progress must fail rather than hang: a stuck agent
   // holds a paid job open indefinitely, and the buyer has already been charged.
-  const deadline = Date.now() + timeoutMs;
-  for await (const msg of query({
-    prompt,
-    options: { cwd, permissionMode: "bypassPermissions", allowedTools, maxTurns },
-  })) {
-    if (Date.now() > deadline) {
-      return { text: said.join(""), tools, ok: false, subtype: "timeout",
-               costUsd: null, ms: timeoutMs };
-    }
-    if (msg.type === "assistant") {
-      for (const block of msg.message?.content ?? []) {
-        if (block.type === "text") {
-          said.push(block.text);
-          onText?.(block.text);
-        }
-        if (block.type === "tool_use") {
-          tools.push(block.name);
-          onTool?.(block.name, block.input);
+  //
+  // The timer has to own the deadline, not the loop. Checking the clock as each
+  // message arrives only fires while the agent is talking, and an agent wedged
+  // inside a single long tool call is silent by definition. The abort signal
+  // also kills the child process, which a `return` from this loop would not: it
+  // would leave a `claude` subprocess running against a job nobody is waiting
+  // on any more.
+  const abortController = new AbortController();
+  let timedOut = false;
+  const alarm = setTimeout(() => { timedOut = true; abortController.abort(); }, timeoutMs);
+
+  try {
+    for await (const msg of query({
+      prompt,
+      options: { cwd, permissionMode: "bypassPermissions", allowedTools, maxTurns,
+                 abortController },
+    })) {
+      if (msg.type === "assistant") {
+        for (const block of msg.message?.content ?? []) {
+          if (block.type === "text") {
+            said.push(block.text);
+            onText?.(block.text);
+          }
+          if (block.type === "tool_use") {
+            tools.push(block.name);
+            onTool?.(block.name, block.input);
+          }
         }
       }
+      if (msg.type === "result") result = msg;
     }
-    if (msg.type === "result") result = msg;
+  } catch (err) {
+    // An abort surfaces here as a throw. A timeout is a real outcome of the run
+    // and is reported as one; anything else is a genuine fault and is raised.
+    if (!timedOut) throw err;
+  } finally {
+    clearTimeout(alarm);
+  }
+
+  if (timedOut) {
+    return { text: said.join(""), tools, ok: false, subtype: "timeout",
+             costUsd: null, ms: timeoutMs };
   }
 
   return {

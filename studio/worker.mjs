@@ -21,7 +21,7 @@ import * as sessions from "./sessions.mjs";
 import { buy, remaining, settlement, BudgetExceeded } from "./purchase.mjs";
 import { agentTurn, agentJson } from "./harness.mjs";
 import { houseStyle } from "./house-style.mjs";
-import { sample } from "./frames.mjs";
+import { sample, contentStats } from "./frames.mjs";
 
 const run = promisify(execFile);
 const HF = { env: { ...process.env, HYPERFRAMES_SKIP_SKILLS: "1" }, maxBuffer: 32 * 1024 * 1024 };
@@ -123,15 +123,19 @@ async function render(projectDir) {
 async function review(id, mp4, plan) {
   try {
     const frames = await sample(mp4, 6);
+    // The title and the scene list are deliberately withheld. When they were in
+    // this prompt the reviewer wrote a fluent description of the storyboard it
+    // had been shown rather than the frames it had been sent, and certified a
+    // completely black video as finished work. Ask only what is on screen.
     const r = await buy(id, "vision", "reviewing the render", {
       frames,
       question:
-        `These are ${frames.length} frames sampled evenly across a ` +
-        `${plan.scenes.length}-scene video titled "${plan.title}". Describe what ` +
-        `you actually see in each. Then say plainly whether anything is wrong: ` +
-        `text cut off or overlapping, an image that does not match its scene, ` +
-        `an empty or dead frame, or a composition that reads as unfinished. ` +
-        `Name the frame number for each problem. Do not reassure me.`,
+        `These are ${frames.length} frames sampled evenly across one video. ` +
+        `Describe only what is actually visible in each frame. If a frame is ` +
+        `empty, black, or contains nothing at all, say exactly that and do not ` +
+        `infer what it was meant to contain. Then list what is wrong: text cut ` +
+        `off or overlapping, a dead frame, a composition that reads as ` +
+        `unfinished. Name the frame number for each problem. Do not reassure me.`,
     });
     return { text: r.text, frames: frames.length };
   } catch (err) {
@@ -172,8 +176,11 @@ export async function runJob(id) {
       await agentTurn({
         sessionId: id,
         prompt: first ? composePrompt(projectDir) : fixPrompt(projectDir, lastGate),
-        allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+        // Skill is what lets it load the framework's conventions in one call
+        // instead of reading the skill tree by hand.
+        allowedTools: ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         maxTurns: 60,
+        timeoutMs: Number(process.env.STUDIO_TURN_TIMEOUT_MS ?? 1_500_000),
       });
 
       note(id, "running lint and check");
@@ -181,7 +188,29 @@ export async function runJob(id) {
       if (!lastGate.ok) { attempt++; continue; }
 
       note(id, "rendering");
-      mp4 = await render(projectDir);
+      const candidate = await render(projectDir);
+
+      // Rendering successfully is not the same as having composed anything. An
+      // untouched scaffold renders perfectly well and produces pure black, and
+      // every other check in this pipeline passes on it, so the only thing that
+      // catches it is measuring the pixels.
+      const stats = await contentStats(candidate);
+      if (stats.blank) {
+        lastGate = {
+          ok: false,
+          output:
+            `The render is blank. ${stats.frames} frames were measured and the ` +
+            `brightest was ${stats.maxLuma.toFixed(2)} out of 255, with a maximum ` +
+            `frame-to-frame difference of ${stats.maxDelta.toFixed(2)}. Nothing is ` +
+            `on screen. index.html is almost certainly still the scaffold: it is ` +
+            `the composition that is missing, not the render settings.`,
+        };
+        note(id, "the render came out blank");
+        attempt++;
+        continue;
+      }
+
+      mp4 = candidate;
       break;
     }
 
@@ -235,8 +264,14 @@ function storyboardMd(plan, seconds) {
 const composePrompt = (dir) => `
 Read DIRECTION.md and STORYBOARD.md in ${dir}, then build the composition.
 
+The deliverable is index.html and nothing else. It arrives as an empty scaffold
+and it is your job to replace it. Do not rewrite STORYBOARD.md, DIRECTION.md or
+any other document: the storyboard is already decided and writing prose about it
+is not progress. If index.html is still the scaffold, you have not started.
+
 Start by loading the framework's own rules with the \`/hyperframes\` skill. Do not
 guess at HTML video conventions; the skill exists because the defaults are wrong.
+Load it with the Skill tool; do not read the skill directories by hand.
 
 Work in ${dir}. The assets are already bought and sit in ../../assets relative to
 that directory. Reference each by path. Generate nothing.
