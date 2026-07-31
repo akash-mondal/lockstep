@@ -289,6 +289,29 @@ failure being designed out is a shared scratch directory: everything looks fine 
 agent globs `*.jpg` and picks up another's scene. Verified by running two agents
 concurrently, each given a secret, and checking neither could name the other's.
 
+### The pipeline measures its own output
+
+A paid job once settled 6.3 ℏ, bought five images, narration, word timings and a music bed,
+rendered, reviewed, and delivered ten seconds of pure black. Every check passed. `index.html`
+was still the scaffold it was created from.
+
+Nothing in the pipeline was able to notice, and the reasons are worth stating because they
+generalise past this project. `lint` and `check` pass on an untouched scaffold, because a
+scaffold is valid; they were never able to answer the question. The vision reviewer was
+handed the title and scene list alongside the frames, and wrote a fluent description of
+sixteen metallic keys on a light grey surface. There were no keys. Given a plan and some
+frames, it described the plan.
+
+So the question is now answered by measurement rather than judgment. `contentStats` reads
+average luma and frame-to-frame difference off the render: a composition that was never
+written is black and never changes, and both conditions must hold before anything is
+rejected. The reviewer is asked only what is visible and told to say so when the answer is
+nothing.
+
+The threshold is 20, not 0, because video black is `Y=16` rather than `Y=0` under limited
+range. Testing against zero is the obvious mistake, and the first version of this check made
+it and passed the very video that prompted it.
+
 ---
 
 ## The receipt
